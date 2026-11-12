@@ -1,0 +1,2122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>APEX GT-X · 超级跑车拆解可视化系统</title>
+<style>
+/* ============================================================
+   APEX GT-X · EXPLODED VIEW SYSTEM — HUD 视觉规范
+   ============================================================ */
+:root{
+  --bg:#04070d;
+  --cy:#3fe0ff; --cy-dim:rgba(63,224,255,.55); --cy-line:rgba(63,224,255,.16);
+  --or:#ff8a3c; --rd:#ff4d5e; --gn:#5df2a8; --yl:#ffd24a;
+  --tx:#dcecf7; --tx2:#8ba4b8; --tx3:#54708a;
+  --pnl:rgba(8,14,23,.72); --pnl2:rgba(10,18,30,.92);
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  --ui:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--tx);font-family:var(--ui)}
+body{user-select:none}
+canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+canvas#gl.grabbing{cursor:grabbing}
+canvas#gl.pick{cursor:pointer}
+
+/* ---------- 全屏装饰层 ---------- */
+.fx{position:fixed;inset:0;pointer-events:none;z-index:4}
+.fx.scan{opacity:.5;background:repeating-linear-gradient(180deg,rgba(255,255,255,.03) 0 1px,transparent 1px 3px);mix-blend-mode:overlay}
+.fx.vig{background:radial-gradient(125% 95% at 50% 46%,transparent 38%,rgba(0,0,0,.62) 100%)}
+.fx.grid{opacity:.5;background-image:linear-gradient(rgba(63,224,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(63,224,255,.05) 1px,transparent 1px);background-size:72px 72px;
+  -webkit-mask-image:radial-gradient(120% 90% at 50% 40%,#000 20%,transparent 78%);mask-image:radial-gradient(120% 90% at 50% 40%,#000 20%,transparent 78%)}
+
+/* ---------- 顶栏 ---------- */
+#top{position:fixed;left:0;right:0;top:0;height:60px;z-index:20;display:flex;align-items:center;gap:14px;padding:0 18px;
+  background:linear-gradient(180deg,rgba(4,8,14,.92),rgba(4,8,14,.35) 70%,transparent);border-bottom:1px solid rgba(63,224,255,.09)}
+#brand{display:flex;align-items:baseline;gap:10px;min-width:0}
+#brand .lg{font:800 19px/1 var(--mono);letter-spacing:.16em;color:#eaf6ff;text-shadow:0 0 18px rgba(63,224,255,.45)}
+#brand .lg b{color:var(--cy)}
+#brand .sub{font-size:11px;color:var(--tx3);letter-spacing:.24em;white-space:nowrap}
+.chips{display:flex;gap:8px;margin-left:auto;align-items:center;flex-wrap:nowrap;overflow:hidden}
+.chip{font:600 10.5px/1 var(--mono);letter-spacing:.1em;color:var(--tx2);border:1px solid var(--cy-line);background:rgba(9,17,28,.6);
+  padding:6px 9px;border-radius:5px;white-space:nowrap}
+.chip b{color:var(--cy);font-weight:700}
+.chip.live b{color:var(--gn)}
+.chip.warn b{color:var(--or)}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--gn);box-shadow:0 0 8px var(--gn);margin-right:6px;animation:bl 1.6s infinite}
+@keyframes bl{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* ---------- 面板 ---------- */
+.panel{position:fixed;z-index:20;background:var(--pnl);backdrop-filter:blur(16px) saturate(1.25);-webkit-backdrop-filter:blur(16px) saturate(1.25);
+  border:1px solid rgba(63,224,255,.14);border-radius:12px;box-shadow:0 22px 60px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.04);
+  display:flex;flex-direction:column;overflow:hidden}
+.panel::before{content:"";position:absolute;left:10px;right:10px;top:0;height:1px;background:linear-gradient(90deg,transparent,var(--cy),transparent);opacity:.55}
+#left{left:14px;top:72px;width:308px;max-height:calc(100vh - 156px)}
+#right{right:14px;top:72px;width:330px;max-height:calc(100vh - 156px)}
+.phead{display:flex;align-items:center;gap:8px;padding:11px 13px 9px;border-bottom:1px solid rgba(63,224,255,.1);flex:0 0 auto}
+.phead .t{font:700 11.5px/1 var(--mono);letter-spacing:.18em;color:#cfe9f7}
+.phead .n{font:600 10px/1 var(--mono);color:var(--tx3);margin-left:auto}
+.pbody{padding:11px 13px 14px;overflow-y:auto;overscroll-behavior:contain}
+.pbody::-webkit-scrollbar{width:8px}
+.pbody::-webkit-scrollbar-thumb{background:rgba(63,224,255,.18);border-radius:8px}
+.pbody::-webkit-scrollbar-track{background:transparent}
+
+/* 折叠块 */
+.sec{border:1px solid rgba(63,224,255,.1);border-radius:9px;margin-bottom:9px;background:rgba(6,11,19,.5);overflow:hidden}
+.sec>.sh{display:flex;align-items:center;gap:8px;padding:9px 10px;cursor:pointer;font:700 11px/1 var(--mono);letter-spacing:.14em;color:#bcd8ea}
+.sec>.sh:hover{background:rgba(63,224,255,.06)}
+.sec>.sh .ar{margin-left:auto;color:var(--tx3);transition:transform .25s;font-size:9px}
+.sec.open>.sh .ar{transform:rotate(90deg)}
+.sec>.sc{display:none;padding:2px 10px 11px}
+.sec.open>.sc{display:block}
+
+/* 参数表 */
+.spec{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;font-size:11.5px}
+.spec dt{color:var(--tx3);white-space:nowrap}
+.spec dd{margin:0;color:#d6e8f4;font-family:var(--mono);font-size:11px;text-align:right}
+.spec dd em{color:var(--cy);font-style:normal}
+.kv{display:flex;gap:8px;align-items:baseline;margin:5px 0;font-size:11.5px}
+.kv i{color:var(--tx3);font-style:normal;min-width:74px}
+.kv b{color:#e2f1fb;font:600 11.5px/1.4 var(--mono)}
+.kv b.hi{color:var(--or)}
+
+/* 图例 */
+.legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.lg-item{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--tx2);border:1px solid rgba(255,255,255,.07);
+  border-radius:20px;padding:3px 9px;cursor:pointer;transition:.18s;background:rgba(255,255,255,.02)}
+.lg-item:hover{border-color:var(--cy-dim);color:#dff3ff;background:rgba(63,224,255,.08)}
+.lg-item.on{border-color:var(--cy);color:#fff;background:rgba(63,224,255,.16);box-shadow:0 0 14px rgba(63,224,255,.2)}
+.lg-item s{width:7px;height:7px;border-radius:2px;display:inline-block;text-decoration:none}
+
+/* 零件清单 */
+.filter{width:100%;background:rgba(4,9,15,.8);border:1px solid var(--cy-line);border-radius:7px;color:var(--tx);
+  font:11.5px var(--ui);padding:7px 9px;margin-bottom:9px;outline:none}
+.filter:focus{border-color:var(--cy-dim);box-shadow:0 0 0 2px rgba(63,224,255,.09)}
+.plist{display:flex;flex-direction:column;gap:3px}
+.pitem{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;cursor:pointer;border:1px solid transparent;transition:.15s}
+.pitem:hover{background:rgba(63,224,255,.08);border-color:rgba(63,224,255,.18)}
+.pitem.on{background:rgba(63,224,255,.16);border-color:var(--cy);box-shadow:inset 0 0 18px rgba(63,224,255,.08)}
+.pitem s{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
+.pitem span{font-size:11.5px;color:#cfe3f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pitem em{margin-left:auto;font:9px var(--mono);color:var(--tx3);letter-spacing:.08em;flex:0 0 auto}
+.pitem.dim{opacity:.32}
+
+/* 控制件 */
+.row{display:flex;gap:8px;align-items:center;margin:7px 0}
+.row.wrap{flex-wrap:wrap}
+.btn{flex:1 1 auto;border:1px solid rgba(63,224,255,.22);background:rgba(11,20,32,.8);color:#cfe8f6;font:600 11.5px var(--ui);
+  padding:9px 10px;border-radius:8px;cursor:pointer;transition:.16s;white-space:nowrap;display:flex;align-items:center;justify-content:center;gap:6px}
+.btn:hover{border-color:var(--cy);background:rgba(63,224,255,.12);color:#fff;box-shadow:0 0 16px rgba(63,224,255,.16)}
+.btn:active{transform:translateY(1px)}
+.btn.pri{background:linear-gradient(180deg,rgba(63,224,255,.22),rgba(63,224,255,.1));border-color:var(--cy-dim);color:#eafaff}
+.btn.pri:hover{background:linear-gradient(180deg,rgba(63,224,255,.34),rgba(63,224,255,.16))}
+.btn.on{background:rgba(63,224,255,.2);border-color:var(--cy);color:#fff;box-shadow:inset 0 0 16px rgba(63,224,255,.14)}
+.btn.sm{font-size:10.5px;padding:7px 8px}
+.btn i{font-style:normal;font-size:12px;line-height:1}
+
+.slider-wrap{margin:11px 0 4px}
+.slider-top{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px}
+.slider-top .lb{font:600 10.5px var(--mono);letter-spacing:.14em;color:var(--tx2)}
+.slider-top .vl{font:700 13px var(--mono);color:var(--cy);text-shadow:0 0 12px rgba(63,224,255,.45)}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:22px;background:transparent;cursor:pointer;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:5px;background:linear-gradient(90deg,rgba(63,224,255,.85),rgba(63,224,255,.2));border:1px solid rgba(63,224,255,.25)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;margin-top:-6px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#fff,var(--cy) 60%,#0b6b85);border:1px solid #bff2ff;box-shadow:0 0 14px rgba(63,224,255,.85)}
+input[type=range]::-moz-range-track{height:5px;border-radius:5px;background:rgba(63,224,255,.35)}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--cy);border:1px solid #cff6ff}
+.sub{font:10.5px var(--mono);color:var(--tx3);letter-spacing:.06em}
+
+/* 选中零件卡 */
+#selbox{border:1px solid rgba(63,224,255,.18);border-radius:10px;background:linear-gradient(180deg,rgba(63,224,255,.09),rgba(6,12,20,.6));padding:11px;margin-bottom:10px}
+#selbox .h{display:flex;align-items:center;gap:8px}
+#selbox .nm{font:700 14px var(--ui);color:#f0faff}
+#selbox .en{font:10px var(--mono);color:var(--tx3);letter-spacing:.14em}
+#selbox .ct{margin-left:auto;font:9.5px var(--mono);padding:3px 7px;border-radius:20px;border:1px solid currentColor;opacity:.95}
+#selbox .ds{font-size:11.5px;line-height:1.65;color:#b9d2e2;margin-top:8px}
+#selbox .sp{margin-top:9px;border-top:1px dashed rgba(63,224,255,.16);padding-top:8px;display:grid;grid-template-columns:auto 1fr;gap:5px 10px;font-size:11px}
+#selbox .sp span{color:var(--tx3)}
+#selbox .sp b{color:#dff1fd;font:600 11px var(--mono);text-align:right}
+.empty{font-size:11.5px;color:var(--tx3);line-height:1.7;text-align:center;padding:14px 6px}
+
+/* ---------- 底栏 ---------- */
+#bottom{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;z-index:20;display:flex;align-items:center;gap:10px;
+  padding:9px 14px;border-radius:12px;background:var(--pnl);backdrop-filter:blur(14px);border:1px solid rgba(63,224,255,.13);
+  max-width:min(940px,calc(100vw - 40px));overflow:hidden}
+#bottom .k{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--tx2);white-space:nowrap}
+kbd{font:600 9.5px var(--mono);border:1px solid rgba(63,224,255,.28);border-bottom-width:2px;border-radius:5px;padding:3px 6px;color:#cdeefb;background:rgba(63,224,255,.08)}
+#bottom .sep{width:1px;height:18px;background:rgba(63,224,255,.16)}
+#bar{flex:1 1 auto;height:4px;border-radius:4px;background:rgba(63,224,255,.13);overflow:hidden;min-width:60px}
+#barfill{height:100%;width:0;background:linear-gradient(90deg,var(--cy),var(--gn));box-shadow:0 0 12px rgba(63,224,255,.7);transition:width .06s linear}
+
+/* ---------- 标签 & 引线 ---------- */
+#labels{position:fixed;inset:0;pointer-events:none;z-index:12}
+#leaders{position:fixed;inset:0;pointer-events:none;z-index:11;overflow:visible}
+.lbl{position:absolute;left:0;top:0;will-change:transform;transition:opacity .2s}
+.lbl .in{display:flex;align-items:center;gap:6px;padding:3px 9px;border-radius:20px;white-space:nowrap;
+  background:rgba(6,12,20,.78);border:1px solid rgba(63,224,255,.28);backdrop-filter:blur(6px);box-shadow:0 6px 20px rgba(0,0,0,.5)}
+.lbl .in b{font:600 10.5px var(--ui);color:#dcf0fb}
+.lbl .in i{font:9px var(--mono);color:var(--tx3);font-style:normal;letter-spacing:.08em}
+.lbl.on .in{border-color:var(--cy);background:rgba(10,40,54,.9);box-shadow:0 0 22px rgba(63,224,255,.35)}
+.lbl.on .in b{color:#fff}
+#tooltip{position:fixed;z-index:30;pointer-events:none;padding:5px 10px;border-radius:7px;background:rgba(6,14,22,.92);
+  border:1px solid rgba(63,224,255,.3);font-size:11.5px;color:#e6f7ff;box-shadow:0 10px 28px rgba(0,0,0,.6);opacity:0;transition:opacity .15s}
+#tooltip s{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;text-decoration:none}
+
+/* ---------- 引导 / 加载 / 提示 ---------- */
+#guide{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(2,5,10,.72);backdrop-filter:blur(7px)}
+#guide.hide{display:none}
+.card{width:min(680px,calc(100vw - 36px));max-height:calc(100vh - 60px);overflow:auto;border:1px solid rgba(63,224,255,.22);border-radius:16px;
+  background:linear-gradient(180deg,rgba(9,17,28,.97),rgba(5,10,17,.97));box-shadow:0 40px 120px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.05);padding:22px 24px}
+.card h1{margin:0 0 4px;font:800 22px/1.2 var(--mono);letter-spacing:.1em;color:#f2fbff}
+.card h1 b{color:var(--cy)}
+.card .lead{margin:0 0 16px;font-size:12.5px;color:var(--tx2);line-height:1.7}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:9px}
+.step{border:1px solid rgba(63,224,255,.14);border-radius:11px;padding:11px 12px;background:rgba(63,224,255,.045)}
+.step .n{font:700 10px var(--mono);color:var(--cy);letter-spacing:.18em}
+.step .t{font:700 12.5px var(--ui);color:#eaf7ff;margin:5px 0 4px}
+.step .d{font-size:11px;color:var(--tx2);line-height:1.6}
+.card .foot{display:flex;align-items:center;gap:10px;margin-top:18px;flex-wrap:wrap}
+.card .foot .chk{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--tx2);cursor:pointer}
+.card .foot input{accent-color:#3fe0ff;width:14px;height:14px}
+.card .foot .go{margin-left:auto}
+
+#boot{position:fixed;inset:0;z-index:80;background:radial-gradient(80% 60% at 50% 40%,#071019,#03060b 70%);display:flex;align-items:center;justify-content:center}
+#boot.hide{opacity:0;pointer-events:none;transition:opacity .7s}
+#boot .bx{width:min(460px,86vw);text-align:left}
+#boot .ttl{font:800 26px/1 var(--mono);letter-spacing:.2em;color:#eaf9ff;text-shadow:0 0 30px rgba(63,224,255,.5)}
+#boot .st{margin-top:8px;font:11px var(--mono);color:var(--cy);letter-spacing:.1em;height:16px}
+#boot .log{margin-top:14px;height:104px;overflow:hidden;font:10.5px/1.75 var(--mono);color:var(--tx3)}
+#boot .log b{color:var(--gn);font-weight:400}
+#boot .bar{margin-top:14px;height:3px;background:rgba(63,224,255,.14);border-radius:3px;overflow:hidden}
+#boot .bar i{display:block;height:100%;width:12%;background:linear-gradient(90deg,transparent,var(--cy),transparent);animation:sl 1.15s infinite}
+@keyframes sl{0%{transform:translateX(-120%)}100%{transform:translateX(920%)}}
+#toast{position:fixed;left:50%;bottom:74px;transform:translate(-50%,14px);z-index:70;padding:9px 15px;border-radius:9px;
+  background:rgba(6,14,22,.94);border:1px solid rgba(63,224,255,.3);color:#e8f8ff;font-size:12px;opacity:0;transition:.28s;pointer-events:none;box-shadow:0 14px 40px rgba(0,0,0,.6)}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#err{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;padding:24px;background:#03060b}
+#err.on{display:flex}
+#err .c{max-width:560px;border:1px solid rgba(255,77,94,.35);border-radius:14px;padding:22px;background:rgba(20,8,12,.85)}
+#err h2{margin:0 0 10px;font:700 16px var(--mono);color:var(--rd)}
+#err p{font-size:12.5px;line-height:1.75;color:#d7c6cb;margin:6px 0}
+#err code{font:11.5px var(--mono);color:var(--yl);background:rgba(255,255,255,.06);padding:1px 5px;border-radius:4px}
+
+/* AI 徽标（右下角品牌水印） */
+#mark{position:fixed;right:16px;bottom:16px;z-index:19;font:9.5px var(--mono);letter-spacing:.2em;color:rgba(120,160,185,.5);pointer-events:none}
+
+@media (max-width:1180px){#left{width:264px}#right{width:288px}}
+@media (max-width:900px){
+  #left,#right{position:fixed;left:10px;right:10px;width:auto;top:auto;bottom:64px;max-height:44vh;transform:translateY(120%);transition:transform .32s cubic-bezier(.2,.8,.2,1)}
+  #left.up,#right.up{transform:translateY(0)}
+  #left{z-index:22}#right{z-index:23}
+  #top{height:52px;padding:0 12px}#brand .sub{display:none}
+  #bottom{max-width:calc(100vw - 20px);padding:7px 10px;gap:7px}#bottom .k.hide-s{display:none}
+  .chips .hide-s{display:none}
+}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div class="fx grid"></div>
+<div class="fx scan"></div>
+<div class="fx vig"></div>
+
+<svg id="leaders"></svg>
+<div id="labels"></div>
+
+<!-- ===== 顶栏 ===== -->
+<header id="top">
+  <div id="brand">
+    <div class="lg">APEX<b>·</b>GT-X</div>
+    <div class="sub">超级跑车拆解可视化 / EXPLODED VIEW SYSTEM</div>
+  </div>
+  <div class="chips">
+    <div class="chip live"><span class="dot"></span>SYSTEM <b>ONLINE</b></div>
+    <div class="chip hide-s">零件 <b id="cParts">--</b></div>
+    <div class="chip hide-s">三角面 <b id="cTri">--</b></div>
+    <div class="chip">FPS <b id="cFps">--</b></div>
+    <button class="btn sm" id="btnGuide" style="flex:0 0 auto">? 引导</button>
+    <button class="btn sm" id="btnPanelL" style="flex:0 0 auto;display:none">参数</button>
+    <button class="btn sm" id="btnPanelR" style="flex:0 0 auto;display:none">控制</button>
+  </div>
+</header>
+
+<!-- ===== 左：参数 / 零件 ===== -->
+<aside class="panel" id="left">
+  <div class="phead"><span class="t">整车技术参数</span><span class="n">SPECIFICATION</span></div>
+  <div class="pbody">
+    <div class="sec open">
+      <div class="sh">动力总成 / POWERTRAIN<span class="ar">▶</span></div>
+      <div class="sc">
+        <div class="kv"><i>引擎型式</i><b>4.0L V8 双涡轮 干式油底壳</b></div>
+        <div class="kv"><i>最大功率</i><b class="hi">840 PS / 618 kW @ 7500 rpm</b></div>
+        <div class="kv"><i>峰值扭矩</i><b class="hi">900 N·m @ 3200–6000 rpm</b></div>
+        <div class="kv"><i>红线转速</i><b>8500 rpm</b></div>
+        <div class="kv"><i>变速箱</i><b>8 速双离合 (DCT) 后中置</b></div>
+        <div class="kv"><i>驱动形式</i><b>中置后驱 MR</b></div>
+      </div>
+    </div>
+    <div class="sec open">
+      <div class="sh">性能指标 / PERFORMANCE<span class="ar">▶</span></div>
+      <div class="sc">
+        <div class="kv"><i>0–100 km/h</i><b class="hi">2.5 s</b></div>
+        <div class="kv"><i>0–200 km/h</i><b>7.2 s</b></div>
+        <div class="kv"><i>最高时速</i><b class="hi">340 km/h</b></div>
+        <div class="kv"><i>100–0 制动</i><b>29.4 m</b></div>
+        <div class="kv"><i>最大侧向</i><b>1.62 g</b></div>
+        <div class="kv"><i>下压力</i><b>380 kg @ 250 km/h</b></div>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="sh">尺寸 / 重量<span class="ar">▶</span></div>
+      <div class="sc">
+        <dl class="spec">
+          <dt>车长</dt><dd>4660 <em>mm</em></dd>
+          <dt>车宽</dt><dd>2030 <em>mm</em></dd>
+          <dt>车高</dt><dd>1160 <em>mm</em></dd>
+          <dt>轴距</dt><dd>2870 <em>mm</em></dd>
+          <dt>前/后轮距</dt><dd>1600 / 1610 <em>mm</em></dd>
+          <dt>干重</dt><dd>1340 <em>kg</em></dd>
+          <dt>推重比</dt><dd>0.63 <em>PS/kg</em></dd>
+          <dt>前后配重</dt><dd>42 : 58</dd>
+          <dt>油箱</dt><dd>78 <em>L</em></dd>
+        </dl>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="sh">行走与制动<span class="ar">▶</span></div>
+      <div class="sc">
+        <dl class="spec">
+          <dt>前轮胎</dt><dd>255/30 ZR21</dd>
+          <dt>后轮胎</dt><dd>355/25 ZR22</dd>
+          <dt>轮圈</dt><dd>锻造铝 / 中央锁止</dd>
+          <dt>前制动</dt><dd>410 <em>mm</em> 碳陶 6活塞</dd>
+          <dt>后制动</dt><dd>390 <em>mm</em> 碳陶 4活塞</dd>
+          <dt>悬架</dt><dd>前后双叉臂 + 推杆式</dd>
+          <dt>减振</dt><dd>电磁阀自适应阻尼</dd>
+        </dl>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="sh">零件分类 / LEGEND<span class="ar">▶</span></div>
+      <div class="sc">
+        <div class="legend" id="legend"></div>
+        <div class="sub" style="margin-top:9px;line-height:1.7">点击分类可「隔离显示」，再次点击取消。</div>
+      </div>
+    </div>
+    <div class="sec open">
+      <div class="sh">零件清单 / PARTS<span class="ar">▶</span></div>
+      <div class="sc">
+        <input class="filter" id="pFilter" placeholder="搜索零件名称 / 英文 / 编号…">
+        <div class="plist" id="plist"></div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ===== 右：控制 ===== -->
+<aside class="panel" id="right">
+  <div class="phead"><span class="t">拆解控制台</span><span class="n">CONTROL DECK</span></div>
+  <div class="pbody">
+    <div class="slider-wrap">
+      <div class="slider-top"><span class="lb">拆解进度 EXPLODE</span><span class="vl" id="vExp">0%</span></div>
+      <input type="range" id="rExp" min="0" max="1000" value="0">
+    </div>
+    <div class="row">
+      <button class="btn pri" id="btnPlay"><i>▶</i><span>拆解演示</span></button>
+      <button class="btn" id="btnReset"><i>⟲</i><span>复位</span></button>
+    </div>
+    <div class="row">
+      <button class="btn sm" id="btnSpeed">速度 ×1.0</button>
+      <button class="btn sm" id="btnDemo">自动巡演</button>
+    </div>
+
+    <div class="sec open" style="margin-top:11px">
+      <div class="sh">显示选项 / DISPLAY<span class="ar">▶</span></div>
+      <div class="sc">
+        <div class="row wrap">
+          <button class="btn sm on" id="tRot">自动旋转</button>
+          <button class="btn sm on" id="tLbl">零件标签</button>
+          <button class="btn sm" id="tWire">线框</button>
+          <button class="btn sm" id="tXray">透视车身</button>
+          <button class="btn sm on" id="tShadow">阴影</button>
+          <button class="btn sm" id="tIso">隔离所选</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec open">
+      <div class="sh">视角预设 / CAMERA<span class="ar">▶</span></div>
+      <div class="sc">
+        <div class="row wrap">
+          <button class="btn sm" data-view="hero">45° 主视</button>
+          <button class="btn sm" data-view="front">正前</button>
+          <button class="btn sm" data-view="side">正侧</button>
+          <button class="btn sm" data-view="rear">正后</button>
+          <button class="btn sm" data-view="top">俯视</button>
+          <button class="btn sm" data-view="under">底盘</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec open">
+      <div class="sh">选中零件 / SELECTION<span class="ar">▶</span></div>
+      <div class="sc" style="padding-top:9px">
+        <div id="selbox">
+          <div class="empty" id="selEmpty">点击 3D 模型上的任意零件，<br>查看其技术参数与结构说明。</div>
+          <div id="selBody" style="display:none">
+            <div class="h">
+              <div><div class="nm" id="sName">—</div><div class="en" id="sEn">—</div></div>
+              <div class="ct" id="sCat">—</div>
+            </div>
+            <div class="ds" id="sDesc">—</div>
+            <div class="sp" id="sSpec"></div>
+            <div class="row" style="margin-top:10px">
+              <button class="btn sm" id="sFocus">聚焦视角</button>
+              <button class="btn sm" id="sIso">仅看同类</button>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn sm" id="btnShot">保存截图 PNG</button>
+          <button class="btn sm" id="btnFull">全屏</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ===== 底栏 ===== -->
+<footer id="bottom">
+  <div class="k"><kbd>拖拽</kbd>旋转</div>
+  <div class="k hide-s"><kbd>滚轮</kbd>缩放</div>
+  <div class="k hide-s"><kbd>右键</kbd>平移</div>
+  <div class="sep"></div>
+  <div class="k"><kbd>空格</kbd>拆解</div>
+  <div class="k hide-s"><kbd>R</kbd>复位</div>
+  <div class="k hide-s"><kbd>L</kbd>标签</div>
+  <div class="k hide-s"><kbd>X</kbd>透视</div>
+  <div class="sep"></div>
+  <div id="bar"><i id="barfill"></i></div>
+  <div class="k" id="hintTxt" style="color:var(--cy);min-width:132px;justify-content:flex-end">装配完成 · 待命</div>
+</footer>
+
+<div id="mark">GENERATED WITH THREE.JS</div>
+<div id="tooltip"></div>
+<div id="toast"></div>
+
+<!-- ===== 引导 ===== -->
+<div id="guide">
+  <div class="card">
+    <h1>APEX<b>·</b>GT-X 拆解可视化</h1>
+    <p class="lead">一台 840 马力中置后驱超级跑车，由 <b id="gParts">--</b> 个独立零件实时构建。拖动、拆解、点击，逐层看懂它的每一处结构。</p>
+    <div class="steps">
+      <div class="step"><div class="n">01 / ROTATE</div><div class="t">环绕观察</div><div class="d">按住左键拖拽旋转整车，滚轮缩放，右键（或双指）平移视角。</div></div>
+      <div class="step"><div class="n">02 / EXPLODE</div><div class="t">一键拆解</div><div class="d">点击「拆解演示」或按空格，零件按装配层级依次炸开；拖动滑杆可手动控制任意进度。</div></div>
+      <div class="step"><div class="n">03 / INSPECT</div><div class="t">点选零件</div><div class="d">点击任意零件，右侧显示名称、英文代号与技术参数，并可用「聚焦视角」贴近观察。</div></div>
+      <div class="step"><div class="n">04 / X-RAY</div><div class="t">透视车身</div><div class="d">开启「透视车身」让覆盖件半透明，直接看到内部的引擎、悬架与座舱结构。</div></div>
+    </div>
+    <div class="foot">
+      <label class="chk"><input type="checkbox" id="gDont"> 下次不再提示</label>
+      <button class="btn pri go" id="gGo" style="flex:0 0 auto;padding:11px 26px">进入拆解模式</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 加载 ===== -->
+<div id="boot">
+  <div class="bx">
+    <div class="ttl">APEX·GT-X</div>
+    <div class="st" id="bootSt">初始化…</div>
+    <div class="log" id="bootLog"></div>
+    <div class="bar"><i></i></div>
+  </div>
+</div>
+
+<div id="err"><div class="c">
+  <h2>◈ 无法加载 Three.js 引擎</h2>
+  <p>本页面优先读取同目录下的 <code>three.module.js</code>，读不到时才依次尝试 CDN，当前本地文件与所有镜像均不可用。</p>
+  <p>解决办法：确认 <code>three.module.js</code>（r160）与本文件在同一目录；若用 <code>file://</code> 直接双击打开，浏览器会禁止加载本地模块，改用本地服务器（如 <code>python -m http.server</code>）即可完全离线运行。</p>
+</div></div>
+
+<script type="module">
+/* ============================================================================
+   APEX GT-X · 超级跑车拆解可视化
+   ----------------------------------------------------------------------------
+   全部几何体均由 Three.js 核心 API 程序化生成（无外部模型 / 贴图 / 插件）。
+   坐标系：车头 = -Z，车宽 = X，高度 = Y，y=0 为地面。
+   ============================================================================ */
+
+/* ---------------------------------------------------------------- 0. 引擎加载 */
+/* 仓库内自带 three.module.js（r160）：http(s) 下优先读本地，断网也能跑；
+   file:// 直接双击打开时浏览器禁止 import 本地模块，此时只能走 CDN。 */
+const LOCAL_ENGINE = './three.module.js';
+const CDN_SOURCES = (location.protocol === 'file:' ? [] : [LOCAL_ENGINE]).concat([
+  'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js',
+  'https://unpkg.com/three@0.160.0/build/three.module.js',
+  'https://esm.sh/three@0.160.0',
+  'https://cdn.skypack.dev/three@0.160.0'
+]);
+function srcLabel(url){
+  if(url === LOCAL_ENGINE) return '本地 three.module.js';
+  try{ return new URL(url, location.href).host; }catch(e){ return url; }
+}
+const $ = s => document.querySelector(s);
+const bootLog = $('#bootLog'), bootSt = $('#bootSt');
+function blog(t, ok){ const d = document.createElement('div'); d.innerHTML = '&gt; ' + t + (ok ? ' <b>[OK]</b>' : ''); bootLog.appendChild(d); if(bootLog.childElementCount > 6) bootLog.removeChild(bootLog.firstChild); }
+const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
+
+let THREE = null;
+async function loadThree(){
+  const errs = [];
+  for(let i=0;i<CDN_SOURCES.length;i++){
+    const url = CDN_SOURCES[i];
+    try{
+      const host = srcLabel(url);
+      bootSt.textContent = '加载引擎 (' + (i+1) + '/' + CDN_SOURCES.length + ') … ' + host;
+      /* 单个源 9 秒超时，避免网络挂起导致无法切换备用源 */
+      const mod = await Promise.race([
+        import(/* @vite-ignore */ url),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('连接超时')), 9000))
+      ]);
+      if(mod && mod.Scene){ blog('engine ← ' + host, true); return mod; }
+      throw new Error('模块内容异常');
+    }catch(e){ errs.push(srcLabel(url) + ' :: ' + e.message); }
+  }
+  throw new Error(errs.join('\n'));
+}
+
+/* ---------------------------------------------------------------- 1. 全局状态 */
+const state = {
+  explode: 0, eTarget: 0, playing: false, speed: 1, dir: 1, demo: false, demoT: 0,
+  autoRotate: true, labels: true, wire: false, xray: false, shadows: true,
+  iso: null, selected: null, hovered: null, viewTween: 0
+};
+const clock = { last: 0, fps: 0, acc: 0, frames: 0 };
+let renderer, scene, camera, controls, pmrem;
+
+/* ---------------------------------------------------------------- 2. 颜色 / 材质 */
+const C = {
+  paint:0xc4172b, paint2:0x0d1116, carbon:0x13181e, glass:0x0a1218,
+  chrome:0xd9e6ee, alu:0x9fabb4, ti:0x6e7c88, dark:0x0d1116, rubber:0x15171b,
+  brake:0x353b43, neon:0x3fe0ff, or:0xff8a3c, red:0xff3344, spring:0xff7a18,
+  seat:0x161b22, copper:0xb87333
+};
+const MAT = {};
+function buildMaterials(){
+  const std = (o) => new THREE.MeshStandardMaterial(o);
+  MAT.paint   = new THREE.MeshPhysicalMaterial({ color:C.paint, metalness:.22, roughness:.33, clearcoat:1, clearcoatRoughness:.10, envMapIntensity:.85 });
+  MAT.carbon  = new THREE.MeshPhysicalMaterial({ color:C.carbon, metalness:.35, roughness:.48, clearcoat:.6, clearcoatRoughness:.28, envMapIntensity:.85 });
+  MAT.glass   = new THREE.MeshPhysicalMaterial({ color:C.glass, metalness:0, roughness:.06, clearcoat:1, clearcoatRoughness:.04,
+                                                 transparent:true, opacity:.48, envMapIntensity:1.25, side:THREE.DoubleSide });
+  MAT.chrome  = std({ color:C.chrome, metalness:.92, roughness:.24, envMapIntensity:1.15 });
+  MAT.alu     = std({ color:C.alu, metalness:.72, roughness:.36, envMapIntensity:.95 });
+  MAT.ti      = std({ color:C.ti, metalness:.82, roughness:.38, envMapIntensity:1.0 });
+  MAT.dark    = std({ color:C.dark, metalness:.28, roughness:.72 });
+  MAT.rubber  = std({ color:C.rubber, metalness:.02, roughness:.94 });
+  MAT.rubberF = std({ color:C.rubber, metalness:.02, roughness:.94, flatShading:true });
+  MAT.brake   = std({ color:C.brake, metalness:.92, roughness:.44, envMapIntensity:1.4 });
+  MAT.neon    = std({ color:C.neon, emissive:C.neon, emissiveIntensity:2.1, roughness:.35, metalness:.2 });
+  MAT.neonO   = std({ color:C.or, emissive:C.or, emissiveIntensity:1.6, roughness:.4 });
+  MAT.tail    = std({ color:C.red, emissive:C.red, emissiveIntensity:1.8, roughness:.3 });
+  MAT.head    = std({ color:0xeaf6ff, emissive:0xcfe6f5, emissiveIntensity:1.35, roughness:.18 });
+  MAT.spring  = std({ color:C.spring, metalness:.72, roughness:.32, envMapIntensity:1.2 });
+  MAT.seat    = std({ color:C.seat, metalness:.1, roughness:.88 });
+  MAT.copper  = std({ color:C.copper, metalness:1, roughness:.33, envMapIntensity:1.4 });
+  MAT.pipe    = std({ color:0xb9c6cf, metalness:.82, roughness:.30, envMapIntensity:1.05 });
+  MAT.turbo   = std({ color:0x8d949c, metalness:.95, roughness:.36 });
+  MAT.screen  = std({ color:0x0b2a33, emissive:0x2ad8ff, emissiveIntensity:1.15, roughness:.2 });
+  MAT.ground  = std({ color:0x070b11, metalness:.25, roughness:.86 });
+  MAT.well    = std({ color:0x0a0d12, metalness:.2, roughness:.9, side:THREE.DoubleSide });
+  MAT.line    = std({ color:C.neon, emissive:C.neon, emissiveIntensity:1.4, roughness:.5 });
+  MAT.ALL = Object.values(MAT).filter(m => m && m.isMaterial);
+}
+
+/* ---------------------------------------------------------------- 3. 几何工具 */
+const V3 = (x,y,z) => new THREE.Vector3(x,y,z);
+const clamp = (v,a,b) => Math.min(b, Math.max(a, v));
+const lerp = (a,b,t) => a + (b-a)*t;
+const DEG = Math.PI/180;
+
+function mesh(geo, mat, cast){ const m = new THREE.Mesh(geo, mat); m.castShadow = cast !== false; m.receiveShadow = true; return m; }
+function box(w,h,d, mat, p, r, cast){
+  const m = mesh(new THREE.BoxGeometry(w,h,d), mat, cast);
+  if(p) m.position.set(p[0],p[1],p[2]);
+  if(r) m.rotation.set(r[0],r[1],r[2]);
+  return m;
+}
+function cyl(rt,rb,h,seg, mat, p, r, open, cast){
+  const m = mesh(new THREE.CylinderGeometry(rt,rb,h,seg,1,!!open), mat, cast);
+  if(p) m.position.set(p[0],p[1],p[2]);
+  if(r) m.rotation.set(r[0],r[1],r[2]);
+  return m;
+}
+/* 轴向沿 X 的圆柱（轮轴 / 刹车盘 / 半轴） */
+function cylX(rad, len, seg, mat, p, cast){ const m = cyl(rad,rad,len,seg,mat,p,[0,0,Math.PI/2],false,cast); return m; }
+function torus(rad, tube, rs, ts, mat, p, r, cast){
+  const m = mesh(new THREE.TorusGeometry(rad,tube,rs,ts), mat, cast);
+  if(p) m.position.set(p[0],p[1],p[2]);
+  if(r) m.rotation.set(r[0],r[1],r[2]);
+  return m;
+}
+/* 沿路径的管（弹簧 / 排气 / 管路 / 防滚架） */
+function tube(pts, rad, mat, seg, rseg, cast){
+  const curve = new THREE.CatmullRomCurve3(pts.map(p => Array.isArray(p) ? V3(p[0],p[1],p[2]) : p));
+  return mesh(new THREE.TubeGeometry(curve, seg||42, rad, rseg||8, false), mat, cast);
+}
+/* 螺旋弹簧：给定轴线两端点生成真实螺旋线管 */
+function coilSpring(p0, p1, radius, turns, rad){
+  const a = V3(p0[0],p0[1],p0[2]), b = V3(p1[0],p1[1],p1[2]);
+  const axis = new THREE.Vector3().subVectors(b,a);
+  const len = axis.length(); axis.normalize();
+  const up = Math.abs(axis.y) > .9 ? V3(1,0,0) : V3(0,1,0);
+  const e1 = new THREE.Vector3().crossVectors(axis, up).normalize();
+  const e2 = new THREE.Vector3().crossVectors(axis, e1).normalize();
+  const pts = [], N = turns * 22;
+  for(let i=0;i<=N;i++){
+    const t = i/N, ang = t * turns * Math.PI * 2;
+    const p = a.clone().addScaledVector(axis, t*len)
+      .addScaledVector(e1, Math.cos(ang)*radius)
+      .addScaledVector(e2, Math.sin(ang)*radius);
+    pts.push(p);
+  }
+  const curve = new THREE.CatmullRomCurve3(pts);
+  return mesh(new THREE.TubeGeometry(curve, N, rad, 7, false), MAT.spring);
+}
+/* 多边形轮廓 */
+function polyShape(pts){
+  const s = new THREE.Shape();
+  s.moveTo(pts[0][0], pts[0][1]);
+  for(let i=1;i<pts.length;i++) s.lineTo(pts[i][0], pts[i][1]);
+  s.closePath();
+  return s;
+}
+function roundRect(x0,y0,x1,y1,r){
+  const s = new THREE.Shape();
+  s.moveTo(x0+r,y0);
+  s.lineTo(x1-r,y0); s.absarc(x1-r,y0+r,r,-Math.PI/2,0,false);
+  s.lineTo(x1,y1-r); s.absarc(x1-r,y1-r,r,0,Math.PI/2,false);
+  s.lineTo(x0+r,y1); s.absarc(x0+r,y1-r,r,Math.PI/2,Math.PI,false);
+  s.lineTo(x0,y0+r); s.absarc(x0+r,y0+r,r,Math.PI,Math.PI*1.5,false);
+  s.closePath();
+  return s;
+}
+/* 沿挤出方向（车宽 X）做锥化：shapeX → 车长方向, shapeY → 车高 */
+function taperGeo(geo, fn){
+  const p = geo.attributes.position;
+  for(let i=0;i<p.count;i++) p.setZ(i, p.getZ(i) * fn(p.getX(i), p.getY(i)));
+  geo.computeVertexNormals();
+  return geo;
+}
+const extrudeOpt = (bevel, seg, curve) => ({
+  bevelEnabled: bevel > .001, bevelThickness: bevel, bevelSize: bevel, bevelOffset: 0,
+  bevelSegments: seg == null ? 2 : seg, steps: 1, curveSegments: curve == null ? 14 : curve
+});
+/* 侧视轮廓挤出：shapeX = -carZ（车头为正）, shapeY = 车高, 挤出方向 = 车宽 */
+function extSide(shape, width, mat, o){
+  o = o || {};
+  const bevel = o.bevel == null ? .04 : o.bevel;
+  const depth = Math.max(.004, width - bevel*2);
+  const geo = new THREE.ExtrudeGeometry(shape, Object.assign({ depth }, extrudeOpt(bevel, o.bevSeg, o.curveSeg)));
+  geo.translate(0,0,-depth/2);
+  if(o.taper) taperGeo(geo, o.taper);
+  geo.rotateY(Math.PI/2);
+  return mesh(geo, mat, o.cast);
+}
+/* 俯视轮廓挤出（平板）：shapeX = 车宽, shapeY = -carZ（车头为正）, 挤出方向 = 车高 */
+function extPlate(shape, thick, mat, o){
+  o = o || {};
+  const bevel = o.bevel == null ? .008 : o.bevel;
+  const depth = Math.max(.004, thick - bevel*2);
+  const geo = new THREE.ExtrudeGeometry(shape, Object.assign({ depth }, extrudeOpt(bevel, 1, 8)));
+  geo.translate(0,0,-depth/2);
+  geo.rotateX(-Math.PI/2);
+  return mesh(geo, mat, o.cast);
+}
+
+/* ---------------------------------------------------------------- 4. 整车尺寸 */
+const CAR = {
+  len:4.66, halfW:.90,
+  frontZ:-1.45, rearZ:1.42,
+  fW:{ x:.80, z:-1.45, r:.355, w:.30 },
+  rW:{ x:.845, z: 1.42, r:.375, w:.35 }
+};
+
+/* 车身侧视轮廓：shapeX 由前到后递减 */
+const BODY_TOP = [[2.34,.455],[2.20,.578],[1.78,.648],[1.05,.722],[.55,.792],[-.35,.815],[-1.10,.845],[-1.72,.862],[-2.05,.830],[-2.26,.765],[-2.32,.625]];
+const BOT_FRONT = [[2.34,.425],[2.10,.472],[1.90,.520],[1.62,.560],[1.28,.552],[1.02,.505],[.95,.480]];
+const BOT_REAR  = [[-.96,.792],[-1.35,.800],[-1.70,.785],[-2.02,.745],[-2.14,.700],[-2.26,.620],[-2.32,.520]];
+
+function interpY(poly, x){
+  for(let i=0;i<poly.length-1;i++){
+    const a = poly[i], b = poly[i+1];
+    if((x <= a[0] && x >= b[0]) || (x >= a[0] && x <= b[0])){
+      const t = (x - a[0]) / ((b[0]-a[0]) || 1e-9);
+      return a[1] + (b[1]-a[1])*t;
+    }
+  }
+  return poly[x > poly[0][0] ? 0 : poly.length-1][1];
+}
+function pushRange(out, poly, xa, xb){
+  /* poly 统一按 shapeX 递减存储；按行进方向决定是否反向遍历，避免轮廓自交 */
+  out.push([xa, interpY(poly, xa)]);
+  const dir = Math.sign(xb - xa);
+  const seq = dir < 0 ? poly : poly.slice().reverse();
+  for(const p of seq)
+    if(dir < 0 ? (p[0] < xa-1e-6 && p[0] > xb+1e-6) : (p[0] > xa+1e-6 && p[0] < xb-1e-6)) out.push([p[0], p[1]]);
+  out.push([xb, interpY(poly, xb)]);
+}
+function sectionShape(x0, x1, top, bot){
+  const pts = [];
+  pushRange(pts, top, x0, x1);
+  pushRange(pts, bot, x1, x0);
+  return polyShape(pts);
+}
+/* 车身锥化：车头收窄 / 车尾保持宽体 + 轮位处收腰（给车轮让位） */
+function bodyTaper(sx, sy){
+  const zc = Math.abs(sx), front = sx > 0;
+  let t = 1;
+  t *= front ? 1 - .32 * Math.pow(clamp((zc-.55)/1.85, 0, 1), 1.5)
+             : 1 - .16 * Math.pow(clamp((zc-1.10)/1.25, 0, 1), 1.6);
+  t *= 1 - .32 * Math.exp(-Math.pow((zc-1.45)/.34, 2));
+  if(front) t *= 1 - .07 * Math.exp(-Math.pow((zc-2.30)/.30, 2));
+  return t;
+}
+/* 座舱玻璃：上窄下宽的 tumblehome */
+function canopyTaper(sx, sy){
+  const zc = Math.abs(sx);
+  let t = 1 - .24 * Math.pow(clamp((zc-.35)/1.60, 0, 1), 1.4);
+  t *= 1 - .26 * clamp((sy-.74)/.42, 0, 1);
+  return t;
+}
+/* 轮拱翼子板轮廓（含轮拱缺口，缺口从下缘向上切入） */
+function fenderShape(){
+  const R = .45, yc = .36, xb = Math.sqrt(R*R - .04) ;
+  const s = new THREE.Shape();
+  s.moveTo(.62,.155);
+  s.lineTo(.62,.40); s.lineTo(.52,.58); s.lineTo(.30,.74);
+  s.lineTo(-.30,.74); s.lineTo(-.52,.58); s.lineTo(-.62,.40);
+  s.lineTo(-.62,.155); s.lineTo(-xb,.155);
+  s.absarc(0, yc, R, Math.PI + Math.atan2(-.2,-xb), Math.atan2(-.2, xb), true);
+  s.lineTo(xb,.155);
+  s.closePath();
+  return s;
+}
+/* 轮拱内衬（上半圆壳，双面可见） */
+function wellShell(x, y, z, r, len){
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 20, 1, true, 0, Math.PI), MAT.well);
+  m.rotation.set(0, 0, Math.PI/2);
+  m.position.set(x, y, z);
+  m.castShadow = false; m.receiveShadow = true;
+  return m;
+}
+
+/* ---------------------------------------------------------------- 5. 零件注册 */
+const PARTS = [], PICK = [], PMAP = new Map();
+const CATS = {
+  body:    { name:'车身结构',   color:'#ff5468' },
+  aero:    { name:'空气动力',   color:'#3fe0ff' },
+  power:   { name:'动力总成',   color:'#ffb02e' },
+  drive:   { name:'传动底盘',   color:'#7ce38b' },
+  susp:    { name:'悬架行走',   color:'#8aa8ff' },
+  interior:{ name:'座舱内饰',   color:'#ff8ad8' },
+  thermal: { name:'热管理电子', color:'#4ff0d0' }
+};
+let PINDEX = 0;
+function P(root, def){
+  PINDEX++;
+  const part = Object.assign({
+    idx: PINDEX, cat:'body', dir:[0,1,0], dist:1, delay:0, spin:null, key:false,
+    desc:'', specs:[]
+  }, def);
+  part.root = root; part.id = def.id;
+  part.home = root.position.clone();
+  part.homeQuat = root.quaternion.clone();
+  part.center = new THREE.Vector3();
+  root.userData.pid = part.id;
+  root.traverse(o => {
+    if(o.isMesh){
+      o.userData.pid = part.id;
+      if(def.noShadow || o.material === MAT.glass) o.castShadow = false; else o.castShadow = true;
+      o.receiveShadow = true;
+      PICK.push(o);
+    }
+  });
+  if(def.shadowOnly !== false) root.traverse(o => { if(o.isMesh && !def.noShadow && o.material !== MAT.glass) o.castShadow = true; });
+  PARTS.push(part); PMAP.set(part.id, part);
+  return part;
+}
+const G = () => new THREE.Group();
+
+/* ---------------------------------------------------------------- 6. 建模：车身 */
+function buildBody(){
+  /* --- 前部车身（前舱盖 + 鼻锥） --- */
+  {
+    const g = G();
+    const m = extSide(sectionShape(2.34, .95, BODY_TOP, BOT_FRONT), 1.58, MAT.paint, { bevel:.05, taper:bodyTaper, bevSeg:3 });
+    g.add(m);
+    /* 前舱盖散热百叶（贴合舱盖曲面） */
+    for(let i=0;i<4;i++){
+      const z = -1.58 - i*.115, ty = interpY(BODY_TOP, -z);
+      for(const s of [-1,1])
+        g.add(box(.34,.018,.10, MAT.dark, [s*.30, ty + .004, z], [-.14,0,0], false));
+    }
+    /* 前行李箱盖板分缝 */
+    g.add(box(1.10,.014,.03, MAT.carbon, [0,.726,-1.06], null, false));
+    /* 车标 */
+    g.add(box(.16,.03,.02, MAT.neon, [0,.512,-2.28], [-.30,0,0], false));
+    P(g, { id:'bodyFront', name:'前部车身', en:'FRONT CLIP', cat:'body', key:true,
+      dir:[0,.42,-1], dist:1.75, delay:.02,
+      desc:'碳纤维前舱盖与鼻锥总成，集成前行李箱、碰撞吸能盒与前部散热风道。',
+      specs:[['材质','CFRP 碳纤维预浸料'],['结构','铝合金蜂窝夹层'],['质量','48 kg'],['功能','吸能 / 导流']] });
+  }
+  /* --- 后部车身（引擎舱盖 + 尾部） --- */
+  {
+    const g = G();
+    g.add(extSide(sectionShape(-.96, -2.32, BODY_TOP, BOT_REAR), 1.62, MAT.paint, { bevel:.05, taper:bodyTaper, bevSeg:3 }));
+    /* 引擎舱玻璃观察窗（贴在舱盖表面） */
+    const winShape = polyShape([[-.31,-1.40],[.31,-1.40],[.24,-1.84],[-.24,-1.84]]);
+    const win = extPlate(winShape, .012, MAT.glass, { cast:false });
+    win.position.y = .861;
+    g.add(win);
+    /* 舱盖散热百叶 */
+    for(let i=0;i<5;i++){
+      const z = 1.20 + i*.10, ty = interpY(BODY_TOP, -z);
+      for(const s of [-1,1])
+        g.add(box(.26,.016,.05, MAT.dark, [s*.44, ty + .003, z], null, false));
+    }
+    /* 尾部上缘散热格栅 */
+    for(let i=0;i<5;i++){
+      const z = 2.10 + i*.045, ty = interpY(BODY_TOP, -z);
+      g.add(box(1.24,.014,.03, MAT.dark, [0, ty - .012, z], [-.55,0,0], false));
+    }
+    P(g, { id:'bodyRear', name:'后部车身', en:'REAR CLIP', cat:'body', key:true,
+      dir:[0,.42,1], dist:1.75, delay:.04,
+      desc:'引擎舱盖与尾部总成，含玻璃观察窗、尾部散热格栅与后碰撞结构。',
+      specs:[['材质','CFRP 碳纤维预浸料'],['观察窗','化学强化玻璃'],['质量','56 kg'],['集成','尾灯支架 / 排气出口']] });
+  }
+  /* --- 前 / 后翼子板（带真实轮拱缺口） --- */
+  {
+    const shape = fenderShape();
+    const wheels = [
+      { id:'fenderFL', name:'左前翼子板', en:'FENDER FL', x:-.72, z:CAR.fW.z, dir:[-.62,.42,-.72], key:true },
+      { id:'fenderFR', name:'右前翼子板', en:'FENDER FR', x: .72, z:CAR.fW.z, dir:[ .62,.42,-.72], key:false },
+      { id:'fenderRL', name:'左后翼子板', en:'FENDER RL', x:-.76, z:CAR.rW.z, dir:[-.62,.42, .72], key:false },
+      { id:'fenderRR', name:'右后翼子板', en:'FENDER RR', x: .76, z:CAR.rW.z, dir:[ .62,.42, .72], key:false }
+    ];
+    for(const w of wheels){
+      const g = G();
+      g.add(extSide(shape, .34, MAT.paint, { bevel:.04, bevSeg:2 }));
+      /* 轮拱装饰唇（上半环，避免环体穿到地面以下） */
+      const lip = new THREE.Mesh(new THREE.TorusGeometry(.46,.018,6,26,Math.PI), MAT.carbon);
+      lip.rotation.set(0, Math.PI/2, 0);
+      lip.position.set(0, .36, 0);
+      lip.castShadow = false; lip.receiveShadow = true;
+      g.add(lip);
+      g.position.set(w.x, 0, w.z);
+      P(g, { id:w.id, name:w.name, en:w.en, cat:'body', key:w.key,
+        dir:w.dir, dist:1.25, delay:.12,
+        desc:'外扩式碳纤维翼子板，为宽胎提供轮拱空间并引导轮腔气流排出。',
+        specs:[['形式','外扩 + 轮拱导流'],['材质','CFRP'],['单侧质量','6.4 kg']] });
+    }
+  }
+  /* --- 侧裙 / 门槛 / 肩线平台 --- */
+  {
+    const SILL = [[.95,.80],[.60,.775],[.50,.70],[.42,.585],[-.66,.568],[-.76,.66],[-.86,.795],[-.95,.84]];
+    const sillShape = sectionShape(.95,-.95, SILL, [[.95,.185],[-.95,.185]]);
+    for(const s of [-1,1]){
+      const g = G();
+      const sill = extSide(sillShape, .30, MAT.paint, { bevel:.03, bevSeg:2 });
+      sill.position.x = s*.72;
+      g.add(sill);
+      /* 门槛碳纤维护板 */
+      g.add(box(.10,.105,1.72, MAT.carbon, [s*.79,.175,0], null, false));
+      /* 肩线平台（车窗下沿） */
+      g.add(box(.27,.05,1.68, MAT.paint, [s*.735,.862,-.02]));
+      /* 车门铰链加强件 */
+      g.add(box(.06,.10,.16, MAT.ti, [s*.845,.40,-.86], null, false));
+      P(g, { id: s<0?'sillL':'sillR', name: s<0?'左侧车身框架':'右侧车身框架', en: s<0?'SIDE FRAME L':'SIDE FRAME R',
+        cat:'body', dir:[s*1,.12,0], dist:1.05, delay:.08,
+        desc:'碳纤维座舱侧框架：承载门槛、B 柱与肩线，是整车扭转刚性的主要来源。',
+        specs:[['材质','CFRP 一体成型'],['抗扭刚度','39 000 N·m/deg'],['单侧质量','31 kg']] });
+    }
+  }
+  /* --- 车门（剪刀门，铰链在前下角） --- */
+  {
+    const DOOR = [[.85,.28],[.85,.775],[.755,.855],[-.62,.855],[-.735,.80],[-.78,.64],[-.80,.28]];
+    for(const s of [-1,1]){
+      const hinge = [s*.862,.35,-.86];
+      const pivot = G(); pivot.position.set(hinge[0],hinge[1],hinge[2]);
+      const panel = extSide(polyShape(DOOR), .075, MAT.paint, { bevel:.02, bevSeg:2 });
+      panel.position.set(0, -hinge[1], -hinge[2]);   /* 宽度方向由铰链组提供，仅需抵消高度/纵向绝对坐标 */
+      const g = G(); g.add(pivot); pivot.add(panel);
+      /* 门把手 / 后视镜基座 / 侧进气口 */
+      const h = box(.05,.05,.16, MAT.carbon, [s*.905,.63,.22], null, false); h.position.sub(V3(hinge[0],hinge[1],hinge[2])); pivot.add(h);
+      for(let i=0;i<3;i++){
+        const sl = box(.03,.02,.30, MAT.dark, [s*.905,.44+i*.055,.50], null, false);
+        sl.position.sub(V3(hinge[0],hinge[1],hinge[2])); pivot.add(sl);
+      }
+      P(g, { id: s<0?'doorL':'doorR', name: s<0?'左侧车门':'右侧车门', en: s<0?'DOOR L':'DOOR R',
+        cat:'body', key:s<0, dir:[s*.55,.85,.10], dist:1.35, delay:.06,
+        spin:[-1.12, 0, s*.16],
+        desc:'碳纤维剪刀门，前下铰链向上翻转；内置侧碰撞梁与侧进气导流槽。',
+        specs:[['开启角','68° 上翻'],['材质','CFRP + 铝防撞梁'],['质量','18.6 kg']] });
+    }
+  }
+  /* --- 座舱玻璃顶罩 --- */
+  {
+    const CANOPY = [[.90,.745],[.86,.80],[.10,1.115],[-.58,1.155],[-.92,1.10],[-1.20,.86],[-1.24,.80]];
+    const g = G();
+    g.add(extSide(polyShape(CANOPY), 1.30, MAT.glass, { bevel:.05, bevel:0.05, taper:canopyTaper, bevSeg:3, cast:false }));
+    /* 座舱骨架 / 顶盖加强梁 */
+    g.add(extSide(polyShape([[.10,1.09],[-.58,1.13],[-.60,1.075],[.09,1.038]]), .30, MAT.carbon, { bevel:.02, taper:canopyTaper, cast:false }));
+    g.add(tube([[-.50,1.10,.05],[-.30,1.185,.30],[0,1.205,.36],[.30,1.185,.30],[.50,1.10,.05]], .028, MAT.carbon, 30, 8));
+    P(g, { id:'canopy', name:'座舱顶罩', en:'CANOPY', cat:'body', key:true,
+      dir:[0,1,.18], dist:1.85, delay:.0,
+      desc:'一体化流线型玻璃座舱罩，兼顾气动外形与视野；内部集成防滚架与顶部进气道。',
+      specs:[['玻璃','0.9 m² 化学强化'],['框架','CFRP + 钛合金'],['质量','23 kg'],['风阻贡献','-4.2% Cd']] });
+  }
+  /* --- 前后隔板 / 防火墙 --- */
+  {
+    const g = G();
+    g.add(box(1.60,.62,.14, MAT.carbon, [0,.49,-.93]));
+    g.add(box(1.30,.10,.16, MAT.alu, [0,.775,-.93], null, false));
+    P(g, { id:'cowl', name:'前隔板 / 水槽', en:'COWL PANEL', cat:'body',
+      dir:[0,.75,-.45], dist:1.0, delay:.16,
+      desc:'座舱前隔板，连接前舱盖与座舱；上部为雨刮水槽与空调进风口。',
+      specs:[['材质','CFRP 夹层'],['集成','空调进气 / 转向柱支座']] });
+  }
+  {
+    const g = G();
+    g.add(box(1.60,.68,.14, MAT.alu, [0,.52,.93]));
+    /* 防滚架 */
+    g.add(tube([[-.52,.86,.92],[-.46,1.14,.90],[0,1.20,.90],[.46,1.14,.90],[.52,.86,.92]], .034, MAT.pipe, 34, 8));
+    g.add(tube([[-.46,1.10,.90],[-.46,.86,.55]], .026, MAT.pipe, 20, 8));
+    g.add(tube([[ .46,1.10,.90],[ .46,.86,.55]], .026, MAT.pipe, 20, 8));
+    P(g, { id:'firewall', name:'防火墙 / 防滚架', en:'FIREWALL + ROLLBAR', cat:'body',
+      dir:[0,.62,.42], dist:1.15, delay:.14,
+      desc:'座舱与引擎舱之间的钛合金防火墙，上部集成防滚架，可在翻滚时保持座舱完整。',
+      specs:[['材质','钛合金 + 铝蜂窝'],['防滚架','Ti-6Al-4V'],['质量','27 kg'],['隔音','双层隔热毯']] });
+  }
+  /* --- 底面平板 --- */
+  {
+    const plan = polyShape([
+      [.60,1.95],[.62,1.60],[.50,1.45],[.52,1.05],[.64,.85],[.66,0],[.64,-.95],[.52,-1.42],[.60,-1.75],[.58,-2.05],
+      [-.58,-2.05],[-.60,-1.75],[-.52,-1.42],[-.64,-.95],[-.66,0],[-.64,.85],[-.52,1.05],[-.50,1.45],[-.62,1.60],[-.60,1.95]
+    ]);
+    const g = G();
+    const p = extPlate(plan, .045, MAT.carbon);
+    p.position.y = .145;
+    g.add(p);
+    /* 底部加强筋 */
+    for(const lx of [-.42,0,.42]) g.add(box(.06,.05,3.6, MAT.alu, [lx,.125,.0], null, false));
+    P(g, { id:'floorPan', name:'碳纤维底板', en:'FLOOR PAN', cat:'body', key:true,
+      dir:[0,-1,0], dist:.95, delay:.2,
+      desc:'整车碳纤维单体壳底板，平整化设计用于产生地面效应；内含铝蜂窝加强筋。',
+      specs:[['材质','CFRP + 铝蜂窝'],['平整度','全平底板'],['质量','42 kg'],['刚度贡献','+18%']] });
+  }
+}
+
+/* ---------------------------------------------------------------- 7. 建模：车轮 */
+function buildWheel(cfg){
+  const { x, z, r, w, side, isFront } = cfg;
+  const sx = side * x;                    /* 左右镜像：几何必须按 side 取符号 */
+  const t = isFront ? 'F' : 'R', sname = side < 0 ? 'L' : 'R';
+  const label = (side<0?'左':'右') + (isFront?'前':'后');
+
+  /* --- 轮胎 --- */
+  {
+    const g = G();
+    const tread = cyl(r, r, w, 22, MAT.rubberF, [sx, r, z], [0,0,Math.PI/2]);
+    g.add(tread);
+    for(const s of [-1,1]) g.add(torus(r - w*.24, w*.24, 10, 26, MAT.rubber, [sx + s*w*.5, r, z], [0,Math.PI/2,0]));
+    /* 胎面花纹块 */
+    for(let i=0;i<16;i++){
+      const a = i/16*Math.PI*2;
+      g.add(box(w*.98,.016,.055, MAT.rubber, [sx, r+Math.cos(a)*r*.995, z+Math.sin(a)*r*.995], [a,0,0], false));
+    }
+    P(g, { id:'tire'+t+sname, name:label+'轮胎', en:'TIRE '+t+sname, cat:'susp', key:isFront&&side<0,
+      dir:[side,0,0], dist:1.75, delay:.10,
+      desc: isFront ? '前轴半热熔高性能轮胎，宽胎肩设计提升转向响应与制动抓地力。'
+                    : '后轴超宽半热熔轮胎，355 mm 胎宽用于承受 900 N·m 扭矩输出。',
+      specs: isFront ? [['规格','255/30 ZR21'],['胎压','2.2 bar'],['质量','11.2 kg']]
+                     : [['规格','355/25 ZR22'],['胎压','2.4 bar'],['质量','15.8 kg']] });
+  }
+  /* --- 轮圈 --- */
+  {
+    const g = G();
+    const rr = r*.62;
+    g.add(cyl(rr, rr, w*.86, 26, MAT.chrome, [sx, r, z], [0,0,Math.PI/2], true, false));
+    for(const s of [-1,1]) g.add(torus(rr, .022, 8, 30, MAT.chrome, [sx + s*w*.43, r, z], [0,Math.PI/2,0]));
+    const nS = 10;
+    for(let i=0;i<nS;i++){
+      const a = i/nS*Math.PI*2;
+      g.add(box(.045, rr*.94, .05, MAT.chrome, [sx + side*w*.28, r + Math.cos(a)*rr*.52, z + Math.sin(a)*rr*.52], [a,0,0], false));
+    }
+    g.add(cylX(rr*.34, w*.5, 16, MAT.ti, [sx + side*w*.06, r, z], false));
+    g.add(cylX(rr*.30, .02, 18, MAT.neon, [sx + side*w*.40, r, z], false));
+    g.add(torus(rr*.72, .012, 6, 34, MAT.neon, [sx + side*w*.44, r, z], [0,Math.PI/2,0], false));
+    P(g, { id:'rim'+t+sname, name:label+'轮圈', en:'RIM '+t+sname, cat:'susp', key:false,
+      dir:[side,0,0], dist:2.05, delay:.16,
+      desc:'锻造铝合金十辐中央锁止轮圈，单只减重 3.1 kg 以降低簧下质量。',
+      specs:[['工艺','万吨锻造'],['尺寸', isFront?'21×9.5J':'22×12.5J'],['质量','9.4 kg']] });
+  }
+  /* --- 制动盘 --- */
+  {
+    const g = G();
+    const disc = cylX(r*.60, .028, 30, MAT.brake, [sx + side*.02, r, z], false);
+    g.add(disc);
+    g.add(cylX(r*.30, .05, 16, MAT.ti, [sx + side*.02, r, z], false));
+    g.add(torus(r*.44, .01, 6, 28, MAT.ti, [sx + side*.03, r, z], [0,Math.PI/2,0], false));
+    for(let i=0;i<18;i++){
+      const a = i/18*Math.PI*2;
+      g.add(cyl(.011,.011,.03, 6, MAT.dark, [sx + side*.04, r+Math.cos(a)*r*.50, z+Math.sin(a)*r*.50], [0,0,Math.PI/2], false, false));
+    }
+    P(g, { id:'disc'+t+sname, name:label+'制动盘', en:'BRAKE DISC '+t+sname, cat:'susp', key:false,
+      dir:[side,0,0], dist:2.3, delay:.2,
+      desc:'碳陶复合制动盘，390–410 mm 直径，抗热衰退能力远优于铸铁盘。',
+      specs:[['直径', isFront?'410 mm':'390 mm'],['材质','碳纤维陶瓷'],['质量','8.6 kg']] });
+  }
+  /* --- 卡钳 --- */
+  {
+    const g = G();
+    const ang = 2.35;
+    const cx = sx - side*.02, cyy = r + Math.cos(ang)*r*.60, czz = z + Math.sin(ang)*r*.60;
+    g.add(box(.075,.20,.11, isFront?MAT.neonO:MAT.neon, [cx,cyy,czz], [ang,0,0], false));
+    g.add(box(.05,.09,.16, MAT.ti, [cx + side*.03, cyy, czz], [ang,0,0], false));
+    P(g, { id:'caliper'+t+sname, name:label+'制动卡钳', en:'CALIPER '+t+sname, cat:'susp', key:false,
+      dir:[side,0,0], dist:2.55, delay:.24, noShadow:true,
+      desc: isFront ? '前轴六活塞整体锻造卡钳，配合碳陶盘提供稳定制动力。'
+                    : '后轴四活塞卡钳，集成电子驻车执行器。',
+      specs:[['活塞', isFront?'6 × 38 mm':'4 × 34 mm'],['材质','锻造铝合金'],['质量', isFront?'4.2 kg':'3.1 kg']] });
+  }
+  /* --- 轮拱内衬 --- */
+  {
+    const g = G();
+    g.add(wellShell(side*.70, r - .03, z, .47, .44));
+    P(g, { id:'well'+t+sname, name:label+'轮拱内衬', en:'WHEEL WELL '+t+sname, cat:'body', key:false,
+      dir:[side*.6,.3,0], dist:.85, delay:.3, noShadow:true,
+      desc:'轮腔导流内衬，抑制轮胎甩起的泥沙与气流对刹车散热的干扰。',
+      specs:[['材质','碳纤维 / 吸音毡'],['质量','1.8 kg']] });
+  }
+}
+
+/* ---------------------------------------------------------------- 8. 建模：悬架 */
+function buildSuspension(side, isFront){
+  const w = isFront ? CAR.fW : CAR.rW;
+  const z = w.z, x = side * w.x;
+  const t = isFront?'F':'R', sname = side<0?'L':'R';
+  const label = (side<0?'左':'右') + (isFront?'前':'后');
+  const inner = side*.34;
+
+  /* 下摆臂（A 臂） */
+  {
+    const g = G();
+    g.add(box(.40,.055,.075, MAT.alu, [side*.52,.245,z-.22], [0,-.10,0]));
+    g.add(box(.40,.055,.075, MAT.alu, [side*.52,.245,z+.22], [0,-.10,0]));
+    g.add(box(.09,.07,.44, MAT.ti, [side*.72,.245,z]));
+    g.add(cylX(.035,.13,10, MAT.ti, [inner,.245,z-.22], false));
+    g.add(cylX(.035,.13,10, MAT.ti, [inner,.245,z+.22], false));
+    P(g, { id:'lca'+t+sname, name:label+'下摆臂', en:'LOWER ARM '+t+sname, cat:'susp',
+      dir:[side*.55,-.75,0], dist:1.45, delay:.2, noShadow:true,
+      desc:'锻造铝合金下控制臂，承担主要纵向与侧向载荷，连接转向节与副车架。',
+      specs:[['形式','A 型锻造臂'],['球头','免维护金属球头'],['质量','3.4 kg']] });
+  }
+  /* 上摆臂 + 转向节 */
+  {
+    const g = G();
+    g.add(box(.34,.05,.07, MAT.alu, [side*.54,.545,z-.19], [0,-.08,0]));
+    g.add(box(.34,.05,.07, MAT.alu, [side*.54,.545,z+.19], [0,-.08,0]));
+    g.add(box(.085,.40,.12, MAT.ti, [side*.735,.40,z], [0,0,-side*.04]));
+    g.add(cylX(.05,.10,12, MAT.ti, [x - side*.06, w.r, z], false));
+    P(g, { id:'uca'+t+sname, name:label+'上摆臂 / 转向节', en:'UPPER ARM + KNUCKLE '+t+sname, cat:'susp',
+      dir:[side*.6,-.55,.10], dist:1.35, delay:.24, noShadow:true,
+      desc:'上控制臂与锻造转向节总成，精确控制车轮外倾角变化，抑制侧倾。',
+      specs:[['转向节','锻造 7075-T6'],['外倾角', isFront?'-1.6°':'-2.1°'],['质量','4.8 kg']] });
+  }
+  /* 推杆式减振器 + 螺旋弹簧 */
+  {
+    const g = G();
+    const p0 = [inner + side*.04, .30, z + (isFront? .26 : -.24)];
+    const p1 = [side*.60, .72, z + (isFront? .10 : -.12)];
+    g.add(cyl(.028,.028,.40,12, MAT.ti, [(p0[0]+p1[0])/2,(.30+.72)/2,(p0[2]+p1[2])/2], [0,0,side*.16], false, false));
+    g.add(coilSpring([p0[0]+side*.02,.34,p0[2]], [p1[0],.66,p1[2]], .062, 7, .012));
+    g.add(cyl(.05,.05,.05,14, MAT.ti, [p1[0],.70,p1[2]], null, false, false));
+    g.add(cyl(.05,.05,.05,14, MAT.ti, [p0[0],.32,p0[2]], null, false, false));
+    /* 推杆 */
+    g.add(tube([[side*.72,.26,z+.05],[side*.56,.52,z+.16],[side*.40,.66,z+.06]], .018, MAT.pipe, 20, 7, false));
+    P(g, { id:'damper'+t+sname, name:label+'减振器总成', en:'COILOVER '+t+sname, cat:'susp', key:isFront&&side<0,
+      dir:[side*.5,-.45,-.45], dist:1.5, delay:.28, noShadow:true,
+      desc:'推杆式电磁阀自适应减振器，弹簧与阻尼器内置布置以改善空气动力学。',
+      specs:[['形式','推杆 + 内置弹簧'],['阻尼','磁流变 10 ms 响应'],['行程','68 mm'],['质量','6.2 kg']] });
+  }
+  /* 副车架（左右共用，仅构建一次） */
+  if(side < 0){
+    const g = G();
+    if(isFront){
+      g.add(box(1.10,.10,.46, MAT.alu, [0,.29,z]));
+      g.add(box(.10,.24,.40, MAT.alu, [ .50,.40,z]));
+      g.add(box(.10,.24,.40, MAT.alu, [-.50,.40,z]));
+    }else{
+      g.add(box(1.16,.11,.74, MAT.alu, [0,.30,z]));
+      g.add(box(.10,.30,.70, MAT.alu, [ .54,.44,z]));
+      g.add(box(.10,.30,.70, MAT.alu, [-.54,.44,z]));
+      g.add(box(.90,.10,.16, MAT.alu, [0,.60,z-.30]));
+    }
+    P(g, { id:'subframe'+(isFront?'F':'R'), name:(isFront?'前':'后')+'副车架', en:'SUBFRAME '+(isFront?'F':'R'), cat:'drive',
+      dir:[0,-.55,isFront?-.45:.45], dist:1.2, delay:.26,
+      desc:'铝合金副车架，承载悬架摆臂与动力总成，并通过螺栓与碳纤维单体壳连接。',
+      specs:[['材质','A356-T6 铸铝'],['质量', isFront?'24 kg':'38 kg']] });
+  }
+}
+
+/* ---------------------------------------------------------------- 9. 建模：动力总成 */
+function buildEngine(){
+  const ez = 1.32;
+  /* 缸体 + 曲轴箱（垂直布局：油底壳 0.23 / 缸体 0.40 / 缸盖 0.60 / 稳压腔 0.68） */
+  {
+    const g = G();
+    g.add(box(.60,.28,.62, MAT.alu, [0,.40,ez]));
+    g.add(box(.64,.10,.56, MAT.ti, [0,.235,ez]));
+    g.add(box(.56,.06,.50, MAT.dark, [0,.200,ez]));
+    /* V8 两列缸盖（±22°） */
+    for(const s of [-1,1]){
+      g.add(box(.24,.26,.60, MAT.alu, [s*.25,.60,ez], [0,0,s*.38]));
+      g.add(box(.22,.09,.58, MAT.carbon, [s*.31,.715,ez], [0,0,s*.38]));
+      /* 点火线圈 */
+      for(let i=0;i<4;i++) g.add(cyl(.026,.026,.08,10, MAT.dark, [s*.33,.775,ez-.21+i*.14], null, false, false));
+    }
+    /* 前端齿轮箱 */
+    g.add(box(.44,.30,.09, MAT.ti, [0,.42,ez-.34]));
+    P(g, { id:'engineBlock', name:'V8 发动机缸体', en:'ENGINE BLOCK', cat:'power', key:true,
+      dir:[0,1,0], dist:2.25, delay:.05,
+      desc:'4.0 L 90° V8 双涡轮增压发动机本体：铝合金缸体 + 干式油底壳，缸盖集成排气歧管。',
+      specs:[['排量','3996 cc'],['缸径×行程','86 × 86 mm'],['压缩比','9.3 : 1'],['质量','218 kg']] });
+  }
+  /* 进气歧管 + 稳压腔 */
+  {
+    const g = G();
+    g.add(box(.44,.14,.52, MAT.alu, [0,.68,ez]));
+    g.add(cyl(.08,.08,.44,16, MAT.alu, [0,.76,ez], [0,0,Math.PI/2], false, false));
+    for(const s of [-1,1]) for(let i=0;i<4;i++)
+      g.add(tube([[s*.14,.72,ez-.20+i*.13],[s*.30,.63,ez-.20+i*.13]], .026, MAT.pipe, 12, 7, false));
+    P(g, { id:'intake', name:'进气歧管', en:'INTAKE PLENUM', cat:'power', key:true,
+      dir:[0,1,.1], dist:2.6, delay:.12,
+      desc:'等长进气歧管与稳压腔，配合双涡轮增压器在 3200 rpm 即输出 900 N·m 峰值扭矩。',
+      specs:[['形式','等长 8 歧管'],['增压值','1.6 bar'],['材质','铸铝'],['质量','14 kg']] });
+  }
+  /* 双涡轮增压器 */
+  for(const s of [-1,1]){
+    const g = G();
+    const tx = s*.42, ty = .30, tz = ez + .34;
+    g.add(cyl(.115,.115,.16,18, MAT.turbo, [tx,ty,tz], [0,0,Math.PI/2], false, false));
+    g.add(torus(.095,.048,10,20, MAT.turbo, [tx + s*.10,ty,tz], [0,Math.PI/2,0], false));
+    g.add(cyl(.048,.048,.13,12, MAT.ti, [tx,ty+.13,tz], null, false, false));
+    g.add(tube([[tx,ty+.15,tz],[tx*.8,.52,ez+.12],[s*.16,.64,ez]], .032, MAT.pipe, 16, 8, false));
+    /* 排气歧管：4 根管汇入涡轮 */
+    for(let i=0;i<4;i++)
+      g.add(tube([[s*.33,.55,ez-.22+i*.14],[s*.44,.36,ez-.18+i*.13],[tx,ty+.06,tz-.06]], .024, MAT.copper, 16, 8, false));
+    /* 涡轮后端排气 */
+    g.add(cyl(.052,.052,.28,14, MAT.ti, [tx,ty+.02,tz+.26], [Math.PI/2,0,0], false, false));
+    P(g, { id:'turbo'+(s<0?'L':'R'), name:(s<0?'左':'右')+'侧涡轮增压器', en:'TURBOCHARGER '+(s<0?'L':'R'), cat:'power', key:s<0,
+      dir:[s*.35,.85,.35], dist:2.5, delay:.18, noShadow:true,
+      desc:'双涡管电控涡轮增压器，最高转速 210 000 rpm，配备电控泄压阀与集成排气歧管。',
+      specs:[['最高转速','210 000 rpm'],['增压压力','1.6 bar'],['形式','双涡管 + 电控旁通']] });
+  }
+  /* 中冷器 */
+  for(const s of [-1,1]){
+    const g = G();
+    g.add(box(.15,.26,.44, MAT.alu, [s*.53,.56,ez+.22], [0,0,s*.16]));
+    for(let i=0;i<6;i++) g.add(box(.16,.012,.42, MAT.dark, [s*.53,.44+i*.05,ez+.22], [0,0,s*.16], false));
+    P(g, { id:'intercooler'+(s<0?'L':'R'), name:(s<0?'左':'右')+'中冷器', en:'INTERCOOLER '+(s<0?'L':'R'), cat:'thermal',
+      dir:[s*.6,.6,.35], dist:2.1, delay:.22, noShadow:true,
+      desc:'侧置空空中冷器，将增压后 120 ℃ 的进气冷却至 45 ℃ 以下，保证充气效率。',
+      specs:[['形式','空-空中冷'],['散热面积','0.34 m²'],['温降','ΔT ≈ 75 ℃']] });
+  }
+  /* 油路 / 冷却管路 */
+  {
+    const g = G();
+    g.add(tube([[-.55,.58,ez+.42],[-.60,.46,1.05],[-.52,.38,.55],[-.34,.34,.10]], .030, MAT.pipe, 40, 8, false));
+    g.add(tube([[ .55,.58,ez+.42],[ .60,.46,1.05],[ .52,.38,.55],[ .34,.34,.10]], .030, MAT.pipe, 40, 8, false));
+    g.add(cyl(.085,.085,.26,14, MAT.ti, [-.50,.44,ez-.36], [0,0,Math.PI/2], false, false));
+    P(g, { id:'oilTank', name:'干式油底壳油箱', en:'DRY SUMP TANK', cat:'power',
+      dir:[-.4,.7,-.4], dist:1.9, delay:.3, noShadow:true,
+      desc:'干式油底壳储油罐与回油泵组，保证 1.6 g 侧向加速度下润滑系统不吸空。',
+      specs:[['容量','11 L'],['回油泵','三级干式'],['质量','7.4 kg']] });
+  }
+}
+
+/* ---------------------------------------------------------------- 10. 建模：传动 */
+function buildDrivetrain(){
+  /* 变速箱 */
+  {
+    const g = G();
+    g.add(box(.52,.42,.66, MAT.alu, [0,.44,1.86]));
+    g.add(box(.44,.30,.20, MAT.ti, [0,.38,1.95]));
+    for(let i=0;i<8;i++) g.add(box(.54,.02,.02, MAT.dark, [0,.28+i*.045,1.86], null, false));
+    P(g, { id:'gearbox', name:'8 速双离合变速箱', en:'8-SPEED DCT', cat:'drive', key:true,
+      dir:[0,.55,1], dist:2.2, delay:.14,
+      desc:'纵置 8 速湿式双离合变速箱，换挡时间 45 ms，集成电子差速器与起步弹射功能。',
+      specs:[['挡位','8 前 1 倒'],['换挡时间','45 ms'],['扭矩容量','1 000 N·m'],['质量','96 kg']] });
+  }
+  /* 半轴 / 差速器 */
+  {
+    const g = G();
+    g.add(cylX(.075,.34,14, MAT.ti, [ .30,.42,CAR.rW.z], false));
+    g.add(cylX(.075,.34,14, MAT.ti, [-.30,.42,CAR.rW.z], false));
+    g.add(cylX(.10,.14,14, MAT.dark, [ .48,.42,CAR.rW.z], false));
+    g.add(cylX(.10,.14,14, MAT.dark, [-.48,.42,CAR.rW.z], false));
+    g.add(box(.34,.30,.22, MAT.alu, [0,.42,CAR.rW.z]));
+    g.add(cyl(.06,.06,.42,14, MAT.ti, [0,.44,1.62], [Math.PI/2,0,0], false, false));
+    P(g, { id:'driveshaft', name:'半轴 / 差速器', en:'DRIVESHAFT + LSD', cat:'drive',
+      dir:[0,-.35,1], dist:1.85, delay:.2, noShadow:true,
+      desc:'等长半轴与电控限滑差速器，可主动分配左右轮扭矩，抑制出弯推头。',
+      specs:[['形式','电控多片 LSD'],['扭矩分配','0–100%'],['半轴','钛合金等长']] });
+  }
+  /* 燃油系统 */
+  {
+    const g = G();
+    g.add(box(.72,.26,.52, MAT.ti, [0,.30,.28]));
+    g.add(tube([[.30,.42,.42],[.34,.55,-.10],[.30,.62,-.52]], .026, MAT.pipe, 22, 7, false));
+    g.add(cyl(.05,.05,.20,12, MAT.ti, [0,.30,.28], [0,0,Math.PI/2], false, false));
+    P(g, { id:'fuelTank', name:'安全油箱', en:'FUEL TANK', cat:'drive',
+      dir:[0,-.75,.3], dist:1.35, delay:.3, noShadow:true,
+      desc:'78 L 凯夫拉防爆油箱，位于座舱后方低重心位置，内置双燃油泵与防浪隔板。',
+      specs:[['容量','78 L'],['材质','凯夫拉 + 橡胶囊'],['质量','19 kg']] });
+  }
+}
+
+/* ---------------------------------------------------------------- 11. 建模：热管理 */
+function buildCooling(){
+  for(const s of [-1,1]){
+    /* 散热器 */
+    const g = G();
+    const rz = -1.72, ry = .34;
+    g.add(box(.54,.34,.05, MAT.alu, [s*.42,ry,rz], [-.42,0,s*.10]));
+    for(let i=0;i<7;i++) g.add(box(.54,.014,.05, MAT.dark, [s*.42,ry-.135+i*.045,rz], [-.42,0,s*.10], false));
+    g.add(box(.58,.05,.12, MAT.carbon, [s*.42,ry+.19,rz], [-.42,0,s*.10]));
+    P(g, { id:'radiator'+(s<0?'L':'R'), name:(s<0?'左':'右')+'侧散热器', en:'RADIATOR '+(s<0?'L':'R'), cat:'thermal', key:s<0,
+      dir:[s*.35,.35,-1], dist:1.55, delay:.16, noShadow:true,
+      desc:'倾斜布置的铝制水冷散热器，配合双电子风扇为发动机与变速箱油提供冷却。',
+      specs:[['芯体尺寸','620 × 420 × 34 mm'],['散热量','78 kW'],['风扇','双 480 W 电子扇']] });
+    /* 风扇 */
+    {
+      const g2 = G();
+      const fz = rz + .32;
+      g2.add(cyl(.21,.21,.06,20, MAT.dark, [s*.42,ry,fz], [Math.PI/2,0,0], true, false));
+      g2.add(cylX(.045,.09,12, MAT.ti, [s*.38,ry,fz], false));
+      for(let i=0;i<7;i++){
+        const a = i/7*Math.PI*2;
+        g2.add(box(.02,.17,.045, MAT.dark, [s*.42, ry+Math.cos(a)*.11, fz+Math.sin(a)*.11], [a,0,0], false));
+      }
+      P(g2, { id:'fan'+(s<0?'L':'R'), name:(s<0?'左':'右')+'冷却风扇', en:'FAN '+(s<0?'L':'R'), cat:'thermal',
+        dir:[s*.3,.5,-.7], dist:1.35, delay:.24, noShadow:true,
+        desc:'480 W 无刷电子风扇，根据水温与车速无级调速，降低高速时的风阻损失。',
+        specs:[['功率','480 W'],['转速','0–3200 rpm'],['直径','480 mm']] });
+    }
+  }
+  /* 冷却管路 + 膨胀壶 */
+  {
+    const g = G();
+    g.add(tube([[-.44,.52,-1.52],[-.52,.42,-.95],[-.42,.36,-.20],[.20,.34,.45],[.52,.40,.95]], .036, MAT.pipe, 54, 8, false));
+    g.add(tube([[ .44,.52,-1.52],[ .52,.42,-.95],[ .42,.36,-.20],[-.20,.34,.45],[-.52,.40,.95]], .036, MAT.pipe, 54, 8, false));
+    g.add(cyl(.10,.10,.22,16, MAT.ti, [-.60,.40,-1.15], [0,0,.2], false, false));
+    P(g, { id:'coolant', name:'冷却管路', en:'COOLANT LINES', cat:'thermal',
+      dir:[0,.5,-.55], dist:1.3, delay:.32, noShadow:true,
+      desc:'铝合金硬管冷却回路，将前后散热器与发动机水套、变速箱油冷器串联。',
+      specs:[['管路','铝硬管 + 硅胶接头'],['流量','260 L/min']] });
+  }
+  /* 蓄电池 / 电控单元 */
+  {
+    const g = G();
+    g.add(box(.46,.20,.34, MAT.dark, [ .48,.30,-1.05]));
+    g.add(box(.30,.14,.26, MAT.ti, [-.52,.34,-1.02]));
+    P(g, { id:'ecu', name:'蓄电池 / 整车控制器', en:'ECU + BATTERY', cat:'thermal',
+      dir:[0,-.55,-.5], dist:1.25, delay:.34, noShadow:true,
+      desc:'锂铁磷酸蓄电池与整车域控制器，管理动力、热管理与空气动力学执行机构。',
+      specs:[['电池','12 V 40 Ah LiFePO4'],['控制器','双核 ASIL-D'],['质量','11 kg']] });
+  }
+}
+
+/* ---------------------------------------------------------------- 12. 建模：内饰 */
+function buildInterior(){
+  /* 座椅 ×2 */
+  for(const s of [-1,1]){
+    const g = G();
+    const sx = s*.38, sz = .12;
+    g.add(box(.46,.11,.52, MAT.seat, [sx,.50,sz], null, false));
+    g.add(box(.44,.56,.13, MAT.seat, [sx,.80,sz+.30], [-.20,0,0], false));
+    g.add(box(.24,.14,.11, MAT.seat, [sx,1.055,sz+.40], [-.20,0,0], false));
+    for(const b of [-1,1]) g.add(box(.07,.34,.50, MAT.seat, [sx+b*.20,.66,sz+.02], [0,0,-b*.10], false));
+    /* 四点式安全带 */
+    g.add(box(.05,.36,.02, MAT.neon, [sx-.09,.86,sz+.245], [-.20,0,.12], false));
+    g.add(box(.05,.36,.02, MAT.neon, [sx+.09,.86,sz+.245], [-.20,0,-.12], false));
+    P(g, { id:'seat'+(s<0?'L':'R'), name:(s<0?'左':'右')+'侧座椅', en:'SEAT '+(s<0?'L':'R'), cat:'interior', key:s<0,
+      dir:[s*.25,1,.15], dist:1.6, delay:.1, noShadow:true,
+      desc:'碳纤维壳体桶形座椅，四点式安全带固定，整体质量仅 8.4 kg，可选装加热。',
+      specs:[['壳体','CFRP 一体壳'],['安全带','四点式'],['质量','8.4 kg']] });
+  }
+  /* 仪表台 + 中控 */
+  {
+    const g = G();
+    g.add(box(1.16,.16,.36, MAT.carbon, [0,.665,-.62], [-.16,0,0]));
+    g.add(box(.42,.16,.03, MAT.screen, [-.36,.672,-.47], [-.16,0,0], false));
+    g.add(box(.26,.12,.03, MAT.screen, [0,.575,-.30], [-.30,0,0], false));
+    for(const s of [-1,1]) g.add(cyl(.055,.055,.04,14, MAT.dark, [s*.34,.712,-.52], [Math.PI/2,0,0], false, false));
+    g.add(box(.22,.28,.72, MAT.carbon, [0,.44,-.02], null, false));
+    g.add(cyl(.03,.03,.10,10, MAT.ti, [0,.61,.16], null, false, false));
+    g.add(cyl(.035,.035,.03,12, MAT.neon, [0,.565,-.30], [-.30,0,0], false, false));
+    P(g, { id:'dashboard', name:'仪表台 / 中控', en:'DASHBOARD', cat:'interior', key:true,
+      dir:[0,.85,-.3], dist:1.5, delay:.16, noShadow:true,
+      desc:'碳纤维仪表台与中控台总成，包含 12.3 英寸曲面仪表、启动按钮与驾驶模式旋钮。',
+      specs:[['屏幕','12.3 英寸曲面'],['材质','CFRP + 麂皮'],['质量','14 kg']] });
+  }
+  /* 方向盘 */
+  {
+    const g = G();
+    const wx = -.38, wy = .575, wz = -.30;
+    const rim = torus(.155,.024,8,26, MAT.seat, [wx,wy,wz], [Math.PI/2-.28,0,0], false);
+    g.add(rim);
+    g.add(box(.03,.03,.16, MAT.ti, [wx,wy,wz+.02], [Math.PI/2-.28,0,0], false));
+    g.add(box(.24,.03,.03, MAT.ti, [wx,wy,wz+.02], [0,0,0], false));
+    g.add(cyl(.045,.045,.05,14, MAT.carbon, [wx,wy,wz+.02], [Math.PI/2-.28,0,0], false, false));
+    g.add(box(.05,.05,.012, MAT.neon, [wx,wy+.15,wz+.05], [Math.PI/2-.28,0,0], false));
+    g.add(cyl(.03,.03,.30,12, MAT.ti, [wx,wy-.06,wz+.18], [Math.PI/2-.28,0,0], false, false));
+    P(g, { id:'steering', name:'方向盘总成', en:'STEERING WHEEL', cat:'interior',
+      dir:[-.30,.85,-.4], dist:1.4, delay:.2, noShadow:true,
+      desc:'麂皮包裹碳纤维方向盘，集成换挡提示灯带、驾驶模式旋钮与转向角传感器。',
+      specs:[['直径','350 mm'],['转向比','13.2 : 1'],['助力','电动 EPS']] });
+  }
+  /* 踏板 */
+  {
+    const g = G();
+    for(let i=0;i<3;i++) g.add(box(.07,.13,.02, MAT.ti, [-.38+ (i-1)*.095, .34, -.80], [-.25,0,0], false));
+    g.add(box(.24,.03,.06, MAT.alu, [-.38,.26,-.78], null, false));
+    P(g, { id:'pedals', name:'踏板组', en:'PEDAL BOX', cat:'interior',
+      dir:[-.3,-.4,-.75], dist:1.25, delay:.24, noShadow:true,
+      desc:'铝合金赛车踏板，线控刹车与可变踏板比，支持跟趾操作。',
+      specs:[['形式','线控 Brake-by-Wire'],['材质','7075 铝'],['自由度','踏板比可调']] });
+  }
+}
+
+/* ---------------------------------------------------------------- 13. 建模：空气动力学 & 灯 */
+function buildAero(){
+  /* 前唇 / 分流器 */
+  {
+    const plan = polyShape([[.62,2.22],[.72,2.04],[.70,1.86],[.62,1.72],[-.62,1.72],[-.70,1.86],[-.72,2.04],[-.62,2.22]]);
+    const g = G();
+    const p = extPlate(plan, .028, MAT.carbon);
+    p.position.y = .085; g.add(p);
+    g.add(box(1.46,.05,.10, MAT.carbon, [0,.125,-2.16]));
+    for(const s of [-1,1]){
+      g.add(box(.05,.06,.24, MAT.carbon, [s*.68,.12,-2.04], [0,0,s*.10], false));
+      g.add(box(.30,.02,.15, MAT.carbon, [s*.60,.235,-1.86], [-.20,0,s*.16], false));
+    }
+    P(g, { id:'splitter', name:'前唇分流器', en:'FRONT SPLITTER', cat:'aero', key:true,
+      dir:[0,-.35,-1], dist:1.5, delay:.06, noShadow:true,
+      desc:'碳纤维前唇与导流叶片，将车头气流分流至底板与轮腔，前端产生约 120 kg 下压力。',
+      specs:[['材质','CFRP 干碳'],['离地间隙','85 mm'],['下压力','120 kg @ 250 km/h']] });
+  }
+  /* 前保险杠 / 进气口 */
+  {
+    const g = G();
+    g.add(box(1.16,.32,.18, MAT.carbon, [0,.31,-2.22]));
+    g.add(box(1.30,.10,.14, MAT.carbon, [0,.45,-2.20]));
+    for(const s of [-1,1]){
+      g.add(box(.40,.22,.05, MAT.dark, [s*.29,.30,-2.305], null, false));
+      for(let i=0;i<3;i++) g.add(box(.38,.018,.06, MAT.carbon, [s*.29,.24+i*.08,-2.315], null, false));
+      g.add(box(.13,.20,.05, MAT.dark, [s*.06,.28,-2.315], null, false));
+      g.add(cyl(.05,.05,.16,12, MAT.dark, [s*.48,.28,-2.12], [Math.PI/2,0,0], false, false));
+    }
+    P(g, { id:'frontFascia', name:'前保险杠总成', en:'FRONT FASCIA', cat:'aero',
+      dir:[0,.10,-1], dist:1.35, delay:.1, noShadow:true,
+      desc:'前保险杠与三段式进气格栅，中央进气口为散热器供风，两侧为刹车导风管入口。',
+      specs:[['进气口','中央 + 双侧'],['材质','CFRP + 蜂窝网'],['质量','9.6 kg']] });
+  }
+  /* 头灯 */
+  for(const s of [-1,1]){
+    const g = G();
+    const hz = -2.12, hy = .585, hx = s*.50, hrx = -.22;
+    g.add(box(.30,.085,.36, MAT.carbon, [hx,hy,hz], [hrx,0,s*.06], false));
+    for(let i=0;i<3;i++) g.add(box(.24,.022,.045, MAT.head, [hx,hy+.030,hz-.06+i*.10], [hrx,0,s*.06], false));
+    for(let i=0;i<3;i++) g.add(box(.22,.014,.03, MAT.neon, [hx,hy+.052,hz-.06+i*.10], [hrx,0,s*.06], false));
+    g.add(box(.26,.012,.30, MAT.glass, [hx,hy+.060,hz-.02], [hrx,0,s*.06], false));
+    g.add(box(.04,.05,.30, MAT.neon, [hx+s*.16,hy+.012,hz-.02], [hrx,0,s*.06], false));
+    P(g, { id:'headlight'+(s<0?'L':'R'), name:(s<0?'左':'右')+'前大灯', en:'HEADLIGHT '+(s<0?'L':'R'), cat:'aero', key:s<0,
+      dir:[s*.45,.30,-1], dist:1.7, delay:.12, noShadow:true,
+      desc:'矩阵式 LED 前照灯，单侧 84 颗独立可控 LED，支持弯道随动与防眩目远光。',
+      specs:[['光源','矩阵 LED 84 颗'],['照射距离','420 m'],['质量','6.2 kg']] });
+  }
+  /* 尾灯 + 排气 */
+  {
+    const g = G();
+    g.add(box(1.30,.055,.05, MAT.tail, [0,.655,2.315], null, false));
+    for(const s of [-1,1]){
+      g.add(box(.20,.17,.06, MAT.carbon, [s*.46,.63,2.30], null, false));
+      for(let i=0;i<3;i++) g.add(box(.16,.016,.03, MAT.tail, [s*.46,.575+i*.05,2.325], null, false));
+    }
+    P(g, { id:'taillight', name:'贯穿式尾灯', en:'TAILLIGHT BAR', cat:'aero',
+      dir:[0,.28,1], dist:1.7, delay:.14, noShadow:true,
+      desc:'全宽贯穿式 OLED 尾灯，制动时亮度自动提升，并集成倒车与雾灯功能。',
+      specs:[['形式','贯穿式 OLED'],['宽度','1300 mm'],['响应','< 1 ms']] });
+  }
+  /* 后保险杠 / 尾部框架 */
+  {
+    const g = G();
+    for(const s of [-1,1]){
+      /* 两侧尾板（中央留出排气通道） */
+      g.add(box(.48,.58,.26, MAT.carbon, [s*.46,.45,2.17]));
+      for(let i=0;i<5;i++) g.add(box(.44,.016,.04, MAT.dark, [s*.46,.26+i*.095,2.305], null, false));
+      /* 侧面导流口 */
+      g.add(box(.10,.34,.22, MAT.dark, [s*.72,.48,2.14], null, false));
+      for(let i=0;i<3;i++) g.add(box(.11,.018,.20, MAT.carbon, [s*.73,.38+i*.10,2.14], null, false));
+    }
+    /* 上横梁 */
+    g.add(box(1.40,.13,.24, MAT.carbon, [0,.675,2.17]));
+    /* 下唇 */
+    g.add(box(1.30,.10,.20, MAT.carbon, [0,.185,2.14]));
+    P(g, { id:'rearFascia', name:'后保险杠总成', en:'REAR FASCIA', cat:'body', key:false,
+      dir:[0,-.18,1], dist:1.85, delay:.1,
+      desc:'碳纤维后保险杠框架，集成尾部散热格栅、排气出口与后碰撞吸能结构。',
+      specs:[['材质','CFRP + 铝蜂窝'],['集成','格栅 / 排气 / 传感器'],['质量','21 kg']] });
+  }
+  {
+    const g = G();
+    for(const s of [-1,1]){
+      g.add(cyl(.075,.075,.46,18, MAT.ti, [s*.13,.44,2.16], [Math.PI/2,0,0], true, false));
+      const tip = cyl(.085,.075,.05,18, MAT.ti, [s*.13,.44,2.38], [Math.PI/2,0,0], true, false);
+      g.add(tip);
+      g.add(torus(.072,.012,8,20, MAT.dark, [s*.13,.44,2.395], null, false));
+    }
+    g.add(box(.70,.24,.30, MAT.alu, [0,.42,1.98], null, false));
+    P(g, { id:'exhaust', name:'中置排气系统', en:'EXHAUST', cat:'power',
+      dir:[0,-.2,1], dist:1.85, delay:.22, noShadow:true,
+      desc:'钛合金中置双出排气，带真空控制旁通阀；高转速时阀门全开以降低背压。',
+      specs:[['材质','钛合金 Ti-6Al-4V'],['管径','2 × 76 mm'],['质量','12.4 kg']] });
+  }
+  /* 后扩散器 */
+  {
+    const g = G();
+    const plan = polyShape([[.70,-1.42],[.76,-1.62],[.68,-1.88],[-.68,-1.88],[-.76,-1.62],[-.70,-1.42]]);
+    const p = extPlate(plan, .025, MAT.carbon);
+    p.position.y = .215; g.add(p);
+    for(let i=0;i<5;i++){
+      const fx = -.52 + i*.26;
+      g.add(box(.02,.20,.50, MAT.carbon, [fx,.28,1.66], [.34,0,0], false));
+    }
+    for(const s of [-1,1]) g.add(box(.06,.22,.52, MAT.carbon, [s*.76,.28,1.66], [.34,0,0], false));
+    P(g, { id:'diffuser', name:'后扩散器', en:'REAR DIFFUSER', cat:'aero', key:true,
+      dir:[0,-.3,1], dist:1.55, delay:.18, noShadow:true,
+      desc:'五通道碳纤维后扩散器，与平整底板共同构成地面效应，是车尾下压力的主要来源。',
+      specs:[['通道','5 通道'],['扩张角','9.5°'],['下压力','180 kg @ 250 km/h']] });
+  }
+  /* 尾翼 */
+  {
+    const g = G();
+    const airfoil = polyShape([[.30,.012],[.30,.075],[.10,.125],[-.16,.115],[-.36,.045],[-.30,.012],[-.12,.062],[.12,.072]]);
+    const wing = extSide(airfoil, 1.46, MAT.carbon, { bevel:.02, bevSeg:2 });
+    wing.position.set(0,1.03,2.02);
+    wing.rotation.x = -.13;
+    g.add(wing);
+    for(const s of [-1,1]){
+      const ep = extSide(polyShape([[.34,.005],[.30,.17],[-.34,.15],[-.38,.005]]), .022, MAT.carbon, { bevel:.008 });
+      ep.position.set(s*.74,1.02,2.02);
+      g.add(ep);
+      /* 天鹅颈支架 */
+      g.add(tube([[s*.30,.86,1.88],[s*.30,.96,1.94],[s*.30,1.05,2.02]], .035, MAT.carbon, 20, 8, false));
+      g.add(box(.05,.26,.15, MAT.carbon, [s*.30,.90,1.86], [-.3,0,0], false));
+    }
+    P(g, { id:'wing', name:'主动式尾翼', en:'ACTIVE REAR WING', cat:'aero', key:true,
+      dir:[0,.95,.55], dist:1.7, delay:.08,
+      desc:'电控主动式尾翼，可根据车速与制动状态在 0–68° 间无级调节攻角，兼具减阻与增稳。',
+      specs:[['攻角','0–68° 可调'],['响应','0.4 s'],['下压力','80 kg @ 250 km/h'],['材质','CFRP']] });
+  }
+  /* 后视镜 */
+  for(const s of [-1,1]){
+    const g = G();
+    g.add(tube([[s*.86,.74,-.70],[s*.94,.80,-.72],[s*1.00,.83,-.76]], .022, MAT.carbon, 16, 7, false));
+    g.add(box(.12,.09,.05, MAT.carbon, [s*1.03,.83,-.78], [0,0,s*.10], false));
+    g.add(box(.10,.07,.012, MAT.chrome, [s*1.09,.83,-.78], [0,0,s*.10], false));
+    P(g, { id:'mirror'+(s<0?'L':'R'), name:(s<0?'左':'右')+'外后视镜', en:'MIRROR '+(s<0?'L':'R'), cat:'aero',
+      dir:[s*1,.35,0], dist:1.5, delay:.26, noShadow:true,
+      desc:'碳纤维外后视镜，镜壳内部为导流通道，可将气流引向侧散热器进气口。',
+      specs:[['材质','CFRP'],['功能','电动调节 / 加热'],['质量','1.4 kg']] });
+  }
+  /* 侧进气道 */
+  for(const s of [-1,1]){
+    const g = G();
+    g.add(box(.13,.36,.46, MAT.carbon, [s*.86,.60,.98], [0,0,s*.08], false));
+    g.add(box(.15,.30,.10, MAT.dark, [s*.90,.60,.86], [0,0,s*.08], false));
+    for(let i=0;i<3;i++) g.add(box(.14,.02,.34, MAT.carbon, [s*.90,.50+i*.09,.98], [0,0,s*.08], false));
+    P(g, { id:'sideIntake'+(s<0?'L':'R'), name:(s<0?'左':'右')+'侧进气道', en:'SIDE INTAKE '+(s<0?'L':'R'), cat:'aero',
+      dir:[s*.85,.25,.35], dist:1.3, delay:.3, noShadow:true,
+      desc:'侧置进气口，为涡轮与中冷器提供冷却空气，同时梳理车轮前方的高压气流。',
+      specs:[['功能','中冷 / 涡轮进气'],['材质','CFRP'],['质量','2.6 kg']] });
+  }
+}
+
+/* ---------------------------------------------------------------- 14. 场景 / 灯光 / 平台 */
+function buildWorld(){
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x04070d);
+  scene.fog = new THREE.FogExp2(0x04070d, .022);
+
+  camera = new THREE.PerspectiveCamera(38, innerWidth/innerHeight, .05, 240);
+  camera.position.set(6,3.4,6);
+
+  renderer = new THREE.WebGLRenderer({ canvas:$('#gl'), antialias:true, alpha:false, powerPreference:'high-performance' });
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.85));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.06;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  /* --- 环境反射（程序化 PMREM 影棚） --- */
+  const envScene = new THREE.Scene();
+  const panel = (w,h,p,ry,rx,col,inten) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w,h), new THREE.MeshBasicMaterial({ color:new THREE.Color(col).multiplyScalar(inten) }));
+    m.position.set(p[0],p[1],p[2]); if(ry) m.rotation.y = ry; if(rx) m.rotation.x = rx;
+    envScene.add(m);
+  };
+  envScene.add(new THREE.Mesh(new THREE.BoxGeometry(24,14,24), new THREE.MeshBasicMaterial({ color:0x080c12, side:THREE.BackSide })));
+  panel(16,8,[0,6.6,0],0,Math.PI/2,0xffffff,1.85);          // 顶光
+  panel(12,5,[-8,3,0],Math.PI/2,0,0x9fd8ff,1.15);            // 左侧冷光
+  panel(12,5,[8,3,0],-Math.PI/2,0,0xffb27a,1.0);             // 右侧暖光
+  panel(10,6,[0,2.4,-9],0,0,0xbfe9ff,1.0);                   // 前方条光
+  panel(10,6,[0,2.0,9],0,0,0x1c3f55,.8);                     // 后方
+  panel(16,10,[0,-4,0],0,-Math.PI/2,0x0a1018,.8);
+  pmrem = new THREE.PMREMGenerator(renderer);
+  pmrem.compileEquirectangularShader();
+  scene.environment = pmrem.fromScene(envScene, .035).texture;
+  envScene.traverse(o => { if(o.isMesh){ o.geometry.dispose(); o.material.dispose(); } });
+
+  /* --- 灯光 --- */
+  scene.add(new THREE.HemisphereLight(0x2b4258, 0x05080c, .75));
+  const key = new THREE.DirectionalLight(0xffffff, 2.35);
+  key.position.set(5.2, 8.4, 4.6);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048,2048);
+  key.shadow.camera.left = -5.2; key.shadow.camera.right = 5.2;
+  key.shadow.camera.top = 5.2; key.shadow.camera.bottom = -5.2;
+  key.shadow.camera.near = .5; key.shadow.camera.far = 26;
+  key.shadow.bias = -0.0006; key.shadow.normalBias = .022;
+  scene.add(key); scene.add(key.target);
+  const fill = new THREE.DirectionalLight(0x7fc8ff, .95); fill.position.set(-6.4,4.2,-5.2); scene.add(fill);
+  const rim = new THREE.DirectionalLight(0xff7a4a, .8); rim.position.set(-3.4,2.6,7.2); scene.add(rim);
+  const p1 = new THREE.PointLight(0x3fe0ff, 46, 15, 2.2); p1.position.set(4.2,2.2,3.6); scene.add(p1);
+  const p2 = new THREE.PointLight(0xff7a2a, 40, 15, 2.2); p2.position.set(-4.2,1.9,-3.2); scene.add(p2);
+  scene.userData.key = key;
+
+  /* --- 地面 / 展台 --- */
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(11, 72), MAT.ground);
+  ground.rotation.x = -Math.PI/2; ground.receiveShadow = true; ground.position.y = -.002;
+  scene.add(ground);
+  const grid = new THREE.GridHelper(26, 52, 0x1d4a5e, 0x0d2431);
+  grid.position.y = .001;
+  grid.material.transparent = true; grid.material.opacity = .5;
+  scene.add(grid);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(4.62,.014,6,120), MAT.line);
+  ring.rotation.x = -Math.PI/2; ring.position.y = .012; scene.add(ring);
+  const ring2 = new THREE.Mesh(new THREE.TorusGeometry(5.4,.008,6,120), MAT.line);
+  ring2.rotation.x = -Math.PI/2; ring2.position.y = .012; ring2.material = MAT.line; scene.add(ring2);
+  const arcs = new THREE.Group(); scene.add(arcs);
+  for(let i=0;i<4;i++){
+    const r0 = 4.15 + i*.19, r1 = r0 + .045;
+    const a = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 64, 1, i*1.35, .78), MAT.line);
+    a.rotation.x = -Math.PI/2; a.position.y = .014;
+    a.castShadow = false; a.receiveShadow = false;
+    arcs.add(a);
+  }
+  scene.userData.arcs = arcs; scene.userData.ring = ring; scene.userData.ring2 = ring2;
+
+  /* --- 装配整车 --- */
+  const car = new THREE.Group(); car.name = 'CAR'; scene.add(car);
+  buildBody(); buildWheel({ ...CAR.fW, side:-1, isFront:true }); buildWheel({ ...CAR.fW, side:1, isFront:true });
+  buildWheel({ ...CAR.rW, side:-1, isFront:false }); buildWheel({ ...CAR.rW, side:1, isFront:false });
+  buildSuspension(-1,true); buildSuspension(1,true); buildSuspension(-1,false); buildSuspension(1,false);
+  buildEngine(); buildDrivetrain(); buildCooling(); buildInterior(); buildAero();
+  /* 所有已注册零件挂到整车组 */
+  PARTS.forEach(p => car.add(p.root));
+  scene.userData.car = car;
+
+  /* --- 选中框 --- */
+  const hb = new THREE.Box3Helper(new THREE.Box3(), 0x3fe0ff);
+  hb.material.depthTest = false; hb.material.transparent = true; hb.material.opacity = .95;
+  hb.renderOrder = 999; hb.visible = false;
+  scene.add(hb); scene.userData.helper = hb;
+
+  /* --- 相机控制 --- */
+  controls = new Orbit(camera, renderer.domElement);
+  controls.target.set(0,.62,0); controls.tTarget.copy(controls.target);
+}
+
+/* ---------------------------------------------------------------- 15. 相机控制器 */
+class Orbit{
+  constructor(cam, dom){
+    this.cam = cam; this.dom = dom;
+    this.target = new THREE.Vector3(); this.tTarget = new THREE.Vector3();
+    this.theta = 2.36; this.phi = 1.16; this.radius = 7.9;
+    this.tTheta = this.theta; this.tPhi = this.phi; this.tRadius = this.radius;
+    this.minR = 1.35; this.maxR = 22; this.minPhi = .08; this.maxPhi = 2.72;
+    this.autoSpeed = .17; this.damp = 9; this.moved = 0;
+    this._ptr = new Map(); this._mode = null; this._down = null; this._pinch0 = 1; this._r0 = 1;
+    dom.addEventListener('contextmenu', e => e.preventDefault());
+    dom.addEventListener('pointerdown', e => this.down(e));
+    dom.addEventListener('pointermove', e => this.move(e));
+    dom.addEventListener('pointerup', e => this.up(e));
+    dom.addEventListener('pointercancel', e => this.up(e));
+    dom.addEventListener('wheel', e => {
+      e.preventDefault();
+      this.tRadius = clamp(this.tRadius * (1 + Math.sign(e.deltaY) * .11), this.minR, this.maxR);
+    }, { passive:false });
+  }
+  pinchDist(){ const a = [...this._ptr.values()]; return Math.hypot(a[0].x-a[1].x, a[0].y-a[1].y) || 1; }
+  down(e){
+    this._ptr.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    try{ this.dom.setPointerCapture(e.pointerId); }catch(_){}
+    this._down = { x:e.clientX, y:e.clientY, t:performance.now() };
+    this.moved = 0; this._downBtn = e.button;
+    if(this._ptr.size === 2){ this._mode = 'pinch'; this._pinch0 = this.pinchDist(); this._r0 = this.tRadius; }
+    else this._mode = (e.button === 0 || e.pointerType !== 'mouse') ? 'rotate' : 'pan';
+    this.dom.classList.add('grabbing');
+  }
+  move(e){
+    const p = this._ptr.get(e.pointerId); if(!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    this.moved += Math.hypot(dx,dy);
+    if(this._mode === 'pinch' && this._ptr.size >= 2){
+      this.tRadius = clamp(this._r0 * (this._pinch0 / Math.max(1, this.pinchDist())), this.minR, this.maxR);
+      return;
+    }
+    if(this._mode === 'rotate'){
+      this.tTheta -= dx * .0062;
+      this.tPhi = clamp(this.tPhi - dy * .0056, this.minPhi, this.maxPhi);
+    }else if(this._mode === 'pan'){
+      const s = this.radius * .0015;
+      const right = new THREE.Vector3().setFromMatrixColumn(this.cam.matrix, 0);
+      const up = new THREE.Vector3().setFromMatrixColumn(this.cam.matrix, 1);
+      this.tTarget.addScaledVector(right, -dx*s).addScaledVector(up, dy*s);
+      this.tTarget.x = clamp(this.tTarget.x,-4,4);
+      this.tTarget.y = clamp(this.tTarget.y,-1.5,4);
+      this.tTarget.z = clamp(this.tTarget.z,-4.5,4.5);
+    }
+  }
+  up(e){
+    this._ptr.delete(e.pointerId);
+    if(this._ptr.size === 0){ this._mode = null; this.dom.classList.remove('grabbing'); }
+    else if(this._ptr.size === 1){ this._mode = 'rotate'; const a = [...this._ptr.values()][0]; }
+  }
+  flyTo(target, radius, theta, phi){
+    this.tTarget.copy(target);
+    if(radius != null) this.tRadius = clamp(radius, this.minR, this.maxR);
+    if(theta != null) this.tTheta = theta + Math.round((this.theta - theta) / (Math.PI*2)) * Math.PI*2;
+    if(phi != null) this.tPhi = clamp(phi, this.minPhi, this.maxPhi);
+  }
+  update(dt){
+    if(state.autoRotate && this._ptr.size === 0) this.tTheta += this.autoSpeed * dt * (state.demo ? 1.35 : 1);
+    const k = 1 - Math.exp(-dt * this.damp);
+    this.theta += (this.tTheta - this.theta) * k;
+    this.phi += (this.tPhi - this.phi) * k;
+    this.radius += (this.tRadius - this.radius) * k;
+    this.target.lerp(this.tTarget, k);
+    const r = this.radius * (1 + .30 * state.explode);
+    const sp = Math.sin(this.phi);
+    this.cam.position.set(
+      this.target.x + r*sp*Math.sin(this.theta),
+      this.target.y + r*Math.cos(this.phi),
+      this.target.z + r*sp*Math.cos(this.theta)
+    );
+    if(this.cam.position.y < .12) this.cam.position.y = .12;
+    this.cam.lookAt(this.target);
+  }
+}
+
+/* ---------------------------------------------------------------- 16. 拆解系统 */
+/* 临时对象（需在 THREE 加载后初始化，见 initTemps） */
+let _q, _e, _v, _p, ray, ndc;
+function applyExplode(t){
+  for(const p of PARTS){
+    const k = t <= 0 ? 0 : clamp((t - p.delay) / Math.max(.08, 1 - p.delay), 0, 1);
+    const e = k*k*(3 - 2*k);   // smoothstep
+    p.root.position.set(
+      p.home.x + p.dir[0]*p.dist*e,
+      p.home.y + p.dir[1]*p.dist*e,
+      p.home.z + p.dir[2]*p.dist*e
+    );
+    if(p.spin){
+      _e.set(p.spin[0]*e, p.spin[1]*e, p.spin[2]*e);
+      p.root.quaternion.copy(p.homeQuat).multiply(_q.setFromEuler(_e));
+    }
+  }
+  /* 选中框跟随 */
+  const sel = state.selected;
+  if(sel){
+    const b = new THREE.Box3().setFromObject(sel.root);
+    scene.userData.helper.box.copy(b);
+    scene.userData.helper.updateMatrixWorld(true);
+  }
+}
+
+/* ---------------------------------------------------------------- 17. 标签系统 */
+const LABELS = [];
+const SVGNS = 'http://www.w3.org/2000/svg';
+function buildLabels(){
+  const el = $('#labels'), svg = $('#leaders');
+  PARTS.forEach((p, i) => {
+    if(!p.key) return;
+    const div = document.createElement('div');
+    div.className = 'lbl';
+    div.innerHTML = '<div class="in"><b>' + p.name + '</b><i>' + p.en + '</i></div>';
+    el.appendChild(div);
+    const g = document.createElementNS(SVGNS,'g');
+    const ln = document.createElementNS(SVGNS,'line');
+    ln.setAttribute('stroke','rgba(63,224,255,.45)'); ln.setAttribute('stroke-width','1'); ln.setAttribute('stroke-dasharray','3 4');
+    const dot = document.createElementNS(SVGNS,'circle');
+    dot.setAttribute('r','2.6'); dot.setAttribute('fill','#3fe0ff'); dot.setAttribute('opacity','.9');
+    g.appendChild(ln); g.appendChild(dot); svg.appendChild(g);
+    /* 局部锚点（取静止包围盒中心） */
+    const box = new THREE.Box3().setFromObject(p.root);
+    const c = box.getCenter(new THREE.Vector3());
+    p.root.worldToLocal(c);
+    LABELS.push({ p, div, ln, dot, anchor:c, side:i%2 ? 1 : -1, off:0 });
+  });
+}
+/* 每帧投影标签位置，并做屏幕空间去重叠排版 */
+function updateLabels(){
+  const w = innerWidth, h = innerHeight;
+  const wide = w > 1000;
+  const padL = wide ? 336 : 16, padR = wide ? 356 : 16;
+  const live = [];
+  for(const L of LABELS){
+    const vis = state.labels && L.p.root.visible;
+    if(!vis){ L.div.style.opacity = 0; L.ln.style.opacity = 0; L.dot.style.opacity = 0; continue; }
+    _v.copy(L.anchor).applyMatrix4(L.p.root.matrixWorld);
+    _p.copy(_v).project(camera);
+    if(_p.z > 1 || _p.z < -1){ L.div.style.opacity = 0; L.ln.style.opacity = 0; L.dot.style.opacity = 0; continue; }
+    L._x = (_p.x*.5+.5)*w; L._y = (-_p.y*.5+.5)*h;
+    L._side = L._x < w*.5 ? -1 : 1;
+    live.push(L);
+  }
+  /* 分侧、按 y 排序后纵向排布，避免互相压盖 */
+  const top = 74, bot = h - 96, gap = 29;
+  for(const side of [-1,1]){
+    const arr = live.filter(L => L._side === side).sort((a,b) => a._y - b._y);
+    let y = top;
+    for(const L of arr){ y = Math.max(L._y - 34, y); L._ly = y; y += gap; }
+    let lim = bot;
+    for(let i=arr.length-1;i>=0;i--){ if(arr[i]._ly > lim) arr[i]._ly = lim; lim = arr[i]._ly - gap; }
+    if(arr.length && arr[0]._ly < top) for(const L of arr) L._ly += (top - arr[0]._ly);
+    for(const L of arr){
+      const lx = clamp(L._x + side*104, padL + 62, w - padR - 62);
+      L.div.style.transform = 'translate(' + lx.toFixed(1) + 'px,' + L._ly.toFixed(1) + 'px) translate(-50%,-50%)';
+      L.ln.setAttribute('x1', L._x.toFixed(1)); L.ln.setAttribute('y1', L._y.toFixed(1));
+      L.ln.setAttribute('x2', (lx - side*46).toFixed(1)); L.ln.setAttribute('y2', L._ly.toFixed(1));
+      L.dot.setAttribute('cx', L._x.toFixed(1)); L.dot.setAttribute('cy', L._y.toFixed(1));
+      const act = state.selected && state.selected.id === L.p.id;
+      L.div.classList.toggle('on', !!act);
+      L.div.style.opacity = 1; L.ln.style.opacity = act ? 1 : .55; L.dot.style.opacity = .95;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------- 18. 选取 / 交互 */
+function initTemps(){
+  _q = new THREE.Quaternion(); _e = new THREE.Euler();
+  _v = new THREE.Vector3(); _p = new THREE.Vector3();
+  ray = new THREE.Raycaster(); ndc = new THREE.Vector2();
+}
+function pickAt(cx, cy){
+  ndc.x = (cx/innerWidth)*2 - 1;
+  ndc.y = -(cy/innerHeight)*2 + 1;
+  ray.setFromCamera(ndc, camera);
+  const hits = ray.intersectObjects(PICK, false);
+  for(const h of hits){
+    const p = PMAP.get(h.object.userData.pid);
+    if(p && p.root.visible) return p;
+  }
+  return null;
+}
+function selectPart(p, focus){
+  state.selected = p;
+  const hb = scene.userData.helper;
+  if(p){
+    const b = new THREE.Box3().setFromObject(p.root);
+    hb.box.copy(b); hb.updateMatrixWorld(true); hb.visible = true;
+    $('#selEmpty').style.display = 'none';
+    $('#selBody').style.display = 'block';
+    $('#sName').textContent = p.name;
+    $('#sEn').textContent = p.en;
+    $('#sCat').textContent = CATS[p.cat].name;
+    $('#sCat').style.color = CATS[p.cat].color;
+    $('#sDesc').textContent = p.desc;
+    $('#sSpec').innerHTML = p.specs.map(s => '<span>' + s[0] + '</span><b>' + s[1] + '</b>').join('');
+    document.querySelectorAll('.pitem').forEach(e => e.classList.toggle('on', e.dataset.id === p.id));
+    if(focus){
+      const c = b.getCenter(new THREE.Vector3());
+      const sz = b.getSize(new THREE.Vector3()).length();
+      /* 聚焦时保持当前方位角，只拉近 */
+      controls.flyTo(c, Math.max(2.7, sz*1.6));
+    }
+    toast('已选中：' + p.name + '（' + p.en + '）');
+  }else{
+    hb.visible = false;
+    $('#selEmpty').style.display = 'block';
+    $('#selBody').style.display = 'none';
+    document.querySelectorAll('.pitem').forEach(e => e.classList.remove('on'));
+  }
+}
+function hoverAt(cx, cy){
+  const p = pickAt(cx, cy);
+  const tt = $('#tooltip'), cv = renderer.domElement;
+  if(p){
+    state.hovered = p;
+    tt.innerHTML = '<s style="background:' + CATS[p.cat].color + '"></s>' + p.name + ' · ' + p.en;
+    tt.style.left = (cx + 16) + 'px'; tt.style.top = (cy + 16) + 'px'; tt.style.opacity = 1;
+    cv.classList.add('pick');
+  }else{
+    state.hovered = null; tt.style.opacity = 0; cv.classList.remove('pick');
+  }
+}
+
+/* ---------------------------------------------------------------- 19. UI */
+function toast(msg, ms){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), ms || 2400);
+}
+function setExplode(v, fromUI){
+  state.eTarget = clamp(v, 0, 1);
+  if(!fromUI) $('#rExp').value = Math.round(state.eTarget * 1000);
+  $('#vExp').textContent = Math.round(state.eTarget*100) + '%';
+  $('#barfill').style.width = (state.eTarget*100) + '%';
+  $('#hintTxt').textContent = state.eTarget > .97 ? '已完全拆解 · 点击零件查看参数'
+    : state.eTarget < .03 ? '装配完成 · 待命'
+    : '拆解中 · ' + Math.round(state.eTarget*100) + '%';
+}
+function applyWire(){
+  MAT.ALL.forEach(m => { m.wireframe = state.wire; });
+}
+function applyXray(){
+  const on = state.xray;
+  [MAT.paint, MAT.carbon].forEach(m => {
+    m.transparent = on; m.opacity = on ? .26 : 1; m.depthWrite = !on;
+    m.side = on ? THREE.DoubleSide : THREE.FrontSide;
+    m.needsUpdate = true;
+  });
+}
+function applyIsolation(){
+  const iso = state.iso;
+  PARTS.forEach(p => { p.root.visible = !iso || p.cat === iso; });
+  if(state.selected && iso && state.selected.cat !== iso) selectPart(null);
+}
+function applyShadows(){
+  renderer.shadowMap.enabled = state.shadows;
+  scene.traverse(o => { if(o.isMesh && o.material) o.material.needsUpdate = true; });
+}
+function buildPartList(){
+  const list = $('#plist');
+  list.innerHTML = PARTS.map(p =>
+    '<div class="pitem" data-id="' + p.id + '"><s style="background:' + CATS[p.cat].color + '"></s>' +
+    '<span>' + p.name + '</span><em>' + p.en + '</em></div>').join('');
+  list.addEventListener('click', e => {
+    const it = e.target.closest('.pitem'); if(!it) return;
+    const p = PMAP.get(it.dataset.id); if(!p) return;
+    if(state.iso && p.cat !== state.iso){ state.iso = null; applyIsolation(); syncIsoBtn(); }
+    selectPart(p, true);
+  });
+}
+function buildLegend(){
+  const box = $('#legend');
+  box.innerHTML = Object.entries(CATS).map(([k,v]) =>
+    '<div class="lg-item" data-cat="' + k + '"><s style="background:' + v.color + '"></s>' + v.name + '</div>').join('');
+  box.addEventListener('click', e => {
+    const it = e.target.closest('.lg-item'); if(!it) return;
+    state.iso = (state.iso === it.dataset.cat) ? null : it.dataset.cat;
+    applyIsolation(); syncIsoBtn();
+    toast(state.iso ? '隔离显示：' + CATS[state.iso].name : '已显示全部零件');
+  });
+}
+function syncIsoBtn(){
+  document.querySelectorAll('.lg-item').forEach(e => e.classList.toggle('on', e.dataset.cat === state.iso));
+  $('#tIso').classList.toggle('on', !!state.iso);
+}
+const VIEWS = {
+  hero:  { theta:2.36, phi:1.14, r:7.9,  t:[0,.62,0] },
+  front: { theta:Math.PI, phi:1.28, r:7.0, t:[0,.58,0] },
+  side:  { theta:Math.PI/2, phi:1.40, r:7.2, t:[0,.62,0] },
+  rear:  { theta:0, phi:1.22, r:7.0, t:[0,.62,0] },
+  top:   { theta:2.6, phi:.30, r:8.6, t:[0,.55,0] },
+  under: { theta:1.5, phi:2.42, r:7.4, t:[0,.55,0] }
+};
+function setView(k){
+  const v = VIEWS[k]; if(!v) return;
+  controls.flyTo(V3(v.t[0],v.t[1],v.t[2]), v.r, v.theta, v.phi);
+}
+function toggleBtn(el, on){ el.classList.toggle('on', on); }
+function wireUI(){
+  /* 拆解滑杆 / 播放 */
+  $('#rExp').addEventListener('input', e => { setExplode(e.target.value/1000, true); state.playing = false; syncPlay(); });
+  $('#btnPlay').addEventListener('click', () => {
+    state.demo = false; syncDemo();
+    if(state.playing){ state.playing = false; }
+    else{
+      state.dir = state.eTarget > .5 ? -1 : 1;
+      state.playing = true;
+      toast(state.dir > 0 ? '开始拆解演示…' : '开始组装演示…');
+    }
+    syncPlay();
+  });
+  $('#btnReset').addEventListener('click', () => {
+    state.playing = false; state.demo = false; syncPlay(); syncDemo();
+    setExplode(0); selectPart(null);
+    controls.flyTo(V3(0,.62,0), 7.9, 2.36, 1.14);
+    toast('已复位到装配状态');
+  });
+  $('#btnSpeed').addEventListener('click', () => {
+    const seq = [.5,1,1.6,2.5]; const i = (seq.indexOf(state.speed)+1) % seq.length;
+    state.speed = seq[i];
+    $('#btnSpeed').textContent = '速度 ×' + state.speed.toFixed(1);
+  });
+  $('#btnDemo').addEventListener('click', () => {
+    state.demo = !state.demo; state.playing = false;
+    if(state.demo){ state.autoRotate = true; toggleBtn($('#tRot'), true); state.demoT = 0; setExplode(1); }
+    syncPlay(); syncDemo();
+    toast(state.demo ? '自动巡演已开启：循环拆解 / 组装' : '自动巡演已关闭');
+  });
+  /* 显示选项 */
+  $('#tRot').addEventListener('click', e => { state.autoRotate = !state.autoRotate; toggleBtn(e.currentTarget, state.autoRotate); });
+  $('#tLbl').addEventListener('click', e => { state.labels = !state.labels; toggleBtn(e.currentTarget, state.labels); });
+  $('#tWire').addEventListener('click', e => { state.wire = !state.wire; toggleBtn(e.currentTarget, state.wire); applyWire(); });
+  $('#tXray').addEventListener('click', e => { state.xray = !state.xray; toggleBtn(e.currentTarget, state.xray); applyXray();
+    toast(state.xray ? '透视模式：覆盖件半透明' : '已恢复实体车身'); });
+  $('#tShadow').addEventListener('click', e => { state.shadows = !state.shadows; toggleBtn(e.currentTarget, state.shadows); applyShadows(); });
+  $('#tIso').addEventListener('click', () => {
+    if(state.iso){ state.iso = null; }
+    else if(state.selected){ state.iso = state.selected.cat; }
+    else { toast('请先选中一个零件，或在「零件分类」中选择'); return; }
+    applyIsolation(); syncIsoBtn();
+  });
+  document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+  /* 选中卡按钮 */
+  $('#sFocus').addEventListener('click', () => { if(state.selected) selectPart(state.selected, true); });
+  $('#sIso').addEventListener('click', () => {
+    if(!state.selected) return;
+    state.iso = state.selected.cat; applyIsolation(); syncIsoBtn();
+    toast('仅显示：' + CATS[state.iso].name);
+  });
+  $('#btnShot').addEventListener('click', shot);
+  $('#btnFull').addEventListener('click', () => {
+    if(document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen().catch(() => toast('全屏被浏览器拒绝'));
+  });
+  /* 引导 */
+  $('#btnGuide').addEventListener('click', () => $('#guide').classList.remove('hide'));
+  $('#gGo').addEventListener('click', () => {
+    if($('#gDont').checked){ try{ localStorage.setItem('apexgtx.guide','1'); }catch(_){} }
+    $('#guide').classList.add('hide');
+  });
+  /* 搜索过滤 */
+  $('#pFilter').addEventListener('input', e => {
+    const q = e.target.value.trim().toLowerCase();
+    document.querySelectorAll('.pitem').forEach(it => {
+      const p = PMAP.get(it.dataset.id);
+      const hit = !q || (p.name + p.en + p.id).toLowerCase().includes(q);
+      it.classList.toggle('dim', !hit);
+      it.style.display = hit ? '' : 'none';
+    });
+  });
+  /* 移动端面板 */
+  const small = () => innerWidth <= 900;
+  const syncPanelBtns = () => {
+    const show = small();
+    $('#btnPanelL').style.display = show ? '' : 'none';
+    $('#btnPanelR').style.display = show ? '' : 'none';
+    if(!show){ $('#left').classList.remove('up'); $('#right').classList.remove('up'); }
+  };
+  $('#btnPanelL').addEventListener('click', () => { $('#left').classList.toggle('up'); $('#right').classList.remove('up'); });
+  $('#btnPanelR').addEventListener('click', () => { $('#right').classList.toggle('up'); $('#left').classList.remove('up'); });
+  addEventListener('resize', syncPanelBtns); syncPanelBtns();
+
+  /* 画布指针：拾取 */
+  const cv = renderer.domElement;
+  let downPt = null;
+  cv.addEventListener('pointerdown', e => { downPt = { x:e.clientX, y:e.clientY, t:performance.now() }; });
+  cv.addEventListener('pointerup', e => {
+    if(!downPt) return;
+    const d = Math.hypot(e.clientX-downPt.x, e.clientY-downPt.y);
+    const dt = performance.now() - downPt.t;
+    if(d < 6 && dt < 420){
+      const p = pickAt(e.clientX, e.clientY);
+      selectPart(p, false);
+      if(p) { /* 点击时轻微拉近 */ }
+    }
+    downPt = null;
+  });
+  let moveRaf = 0, lastPt = null;
+  cv.addEventListener('pointermove', e => {
+    lastPt = { x:e.clientX, y:e.clientY };
+    if(moveRaf) return;
+    moveRaf = requestAnimationFrame(() => { moveRaf = 0; if(lastPt && !controls._ptr.size) hoverAt(lastPt.x, lastPt.y); });
+  });
+  cv.addEventListener('pointerleave', () => { state.hovered = null; $('#tooltip').style.opacity = 0; });
+
+  /* 键盘 */
+  addEventListener('keydown', e => {
+    if(e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    const k = e.key.toLowerCase();
+    if(e.code === 'Space'){ e.preventDefault(); $('#btnPlay').click(); }
+    else if(k === 'r'){ $('#btnReset').click(); }
+    else if(k === 'l'){ $('#tLbl').click(); }
+    else if(k === 'w'){ $('#tWire').click(); }
+    else if(k === 'x'){ $('#tXray').click(); }
+    else if(k === 'i'){ $('#tIso').click(); }
+    else if(k === 'escape'){ selectPart(null); state.iso = null; applyIsolation(); syncIsoBtn(); }
+    else if(k === 'f'){ $('#btnFull').click(); }
+    else if('123456'.includes(k)){
+      const order = ['hero','front','side','rear','top','under'];
+      setView(order[+k-1]);
+    }
+  });
+}
+function syncPlay(){
+  const b = $('#btnPlay');
+  b.classList.toggle('pri', !state.playing);
+  b.innerHTML = state.playing ? '<i>❚❚</i><span>暂停</span>' : (state.eTarget > .5 ? '<i>◀</i><span>组装演示</span>' : '<i>▶</i><span>拆解演示</span>');
+}
+function syncDemo(){ $('#btnDemo').classList.toggle('on', state.demo); }
+function shot(){
+  renderer.render(scene, camera);
+  const url = renderer.domElement.toDataURL('image/png');
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'apex-gtx-' + Date.now() + '.png';
+  a.click();
+  toast('截图已保存到下载目录');
+}
+
+/* ---------------------------------------------------------------- 20. 主循环 */
+function tick(now){
+  const dt = Math.min(.05, (now - (clock.last || now)) / 1000);
+  clock.last = now;
+  /* FPS */
+  clock.acc += dt; clock.frames++;
+  if(clock.acc > .5){
+    clock.fps = clock.frames / clock.acc; clock.acc = 0; clock.frames = 0;
+    $('#cFps').textContent = clock.fps.toFixed(0);
+    $('#cTri').textContent = (renderer.info.render.triangles/1000).toFixed(0) + 'k';
+  }
+  /* 拆解动画 */
+  if(state.demo){
+    state.demoT += dt;
+    const cyc = 11.5, t = (state.demoT % cyc) / cyc;
+    let v;
+    if(t < .28) v = t/.28;
+    else if(t < .50) v = 1;
+    else if(t < .78) v = 1 - (t-.50)/.28;
+    else v = 0;
+    setExplode(v*v*(3-2*v));
+  }
+  if(state.playing && !state.demo){
+    let v = state.eTarget + dt * .62 * state.speed * state.dir;
+    if(state.dir > 0 && v >= 1){ v = 1; state.playing = false; syncPlay(); toast('拆解完成 · 点击任意零件查看参数'); }
+    if(state.dir < 0 && v <= 0){ v = 0; state.playing = false; syncPlay(); toast('装配完成 · 系统待命'); }
+    setExplode(v);
+  }
+  state.explode += (state.eTarget - state.explode) * (1 - Math.exp(-dt*6.5));
+  if(Math.abs(state.eTarget - state.explode) < .0005) state.explode = state.eTarget;
+  applyExplode(state.explode);
+  /* 选中零件时随拆解跟随（仅在拆解动画进行中） */
+  if(state.selected && Math.abs(state.eTarget - state.explode) > .004){
+    const c = new THREE.Box3().setFromObject(state.selected.root).getCenter(new THREE.Vector3());
+    controls.tTarget.lerp(c, .12);
+  }
+  /* 平台旋转装饰 */
+  const arcs = scene.userData.arcs;
+  arcs.rotation.y += dt * .12;
+  arcs.children.forEach((a,i) => { a.rotation.z += dt * (.10 + i*.05) * (i%2?1:-1); });
+  scene.userData.ring2.rotation.z += dt*.05;
+  /* 灯光呼吸 */
+  const pu = .5 + .5*Math.sin(now*.0012);
+  MAT.tail.emissiveIntensity = 1.5 + pu*.9;
+  MAT.neon.emissiveIntensity = 1.9 + pu*.5;
+  /* 渲染 */
+  controls.update(dt);
+  renderer.render(scene, camera);
+  updateLabels();
+}
+function onResize(){
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.85));
+  $('#leaders').setAttribute('viewBox', '0 0 ' + innerWidth + ' ' + innerHeight);
+}
+
+/* ---------------------------------------------------------------- 21. 启动 */
+/* 深链参数：?skipguide&explode=60&view=side&spin=0&iso=susp&wire&xray  */
+const Q = new URLSearchParams(location.search);
+async function boot(){
+  try{
+    blog('初始化渲染管线');
+    THREE = await loadThree();
+    initTemps();
+    await nextFrame();
+    blog('构建材质与灯光', true);
+    buildMaterials();
+    buildWorld();
+    await nextFrame();
+    blog('构建车身 / 悬架 / 动力总成', true);
+    buildLabels();
+    buildPartList();
+    buildLegend();
+    wireUI();
+    /* 初始状态：满拆解 → 自动装配 */
+    $('#cParts').textContent = PARTS.length;
+    $('#gParts').textContent = PARTS.length + ' ';
+    setExplode(1);
+    state.explode = 1; applyExplode(1);
+    setView('hero');
+    controls.radius = 14.5; controls.theta = 1.15;
+    addEventListener('resize', onResize); onResize();
+    renderer.setAnimationLoop(tick);
+    await nextFrame();
+    blog('装配 ' + PARTS.length + ' 个零件', true);
+    blog('系统就绪', true);
+    /* 开场：飞入 + 自动组装 */
+    setTimeout(() => {
+      $('#boot').classList.add('hide');
+      setTimeout(() => { $('#boot').style.display = 'none'; }, 800);
+      let guided = false;
+      try{ guided = localStorage.getItem('apexgtx.guide') === '1'; }catch(_){}
+      if(!Q.has('skipguide') && !guided) $('#guide').classList.remove('hide');
+      else $('#guide').classList.add('hide');
+      /* 深链：直接进入指定状态 */
+      if(Q.has('view')) setView(Q.get('view'));
+      if(Q.get('spin') === '0'){ state.autoRotate = false; toggleBtn($('#tRot'), false); }
+      if(Q.has('iso')){ state.iso = Q.get('iso'); applyIsolation(); syncIsoBtn(); }
+      if(Q.has('wire')){ $('#tWire').click(); }
+      if(Q.has('xray')){ $('#tXray').click(); }
+      if(Q.has('explode')){ state.playing = false; setExplode(clamp(parseFloat(Q.get('explode'))/100, 0, 1)); state.explode = state.eTarget; applyExplode(state.explode); syncPlay(); }
+      else{
+        /* 装配动画：拆解态 → 合体 */
+        state.playing = true; state.dir = -1; syncPlay();
+      }
+      setTimeout(() => { toast('提示：点击任意零件可查看技术参数', 3200); }, 3600);
+    }, 420);
+    window.__APEX_READY = true;
+    /* 调试 / 二次开发接口 */
+    window.__APEX = { THREE, scene, camera, renderer, controls, PARTS, MAT, state, setExplode, selectPart, setView, applyIsolation, PMAP };
+    blog('交互接口已就绪', true);
+  }catch(err){
+    console.error(err);
+    $('#boot').style.display = 'none';
+    $('#err').classList.add('on');
+    window.__APEX_ERROR = String(err && err.message || err);
+  }
+}
+boot();
+</script>
+</body>
+</html>
